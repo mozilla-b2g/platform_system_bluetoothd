@@ -14,18 +14,14 @@
  * limitations under the License.
  */
 
-#include "bt-proto.h"
-#include "bt-core-io.h"
-#include "service.h"
+#pragma once
 
-bt_status_t (*service_handler[256])(const struct pdu*);
+struct pdu;
+struct pdu_wbuf;
 
-register_func
-  (* const register_service[256])(unsigned char, void (*)(struct pdu_wbuf*)) = {
-  /* SERVICE_CORE is special and not handled here */
-  [SERVICE_BT_CORE] = register_bt_core
-};
+bt_status_t
+(*register_bt_core(unsigned char mode,
+                   void (*send_ntf_cb)(struct pdu_wbuf*)))(const struct pdu*);
 
-int (*unregister_service[256])() = {
-  [SERVICE_BT_CORE] = unregister_bt_core
-};
+int
+unregister_bt_core(void);

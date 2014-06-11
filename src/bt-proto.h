@@ -20,7 +20,8 @@
 #include <hardware/bluetooth.h>
 
 enum {
-  SERVICE_CORE = 0x00
+  SERVICE_CORE = 0x00,
+  SERVICE_BT_CORE = 0x01
 };
 
 struct pdu {
@@ -49,7 +50,39 @@ read_pdu_at(const struct pdu* pdu, unsigned long offset, const char* fmt,
             ...);
 
 long
+read_bt_property_t(const struct pdu* pdu, unsigned long offset,
+                   bt_property_t* property);
+
+long
+read_bt_bdaddr_t(const struct pdu* pdu, unsigned long offset,
+                 bt_bdaddr_t* addr);
+
+long
+read_bt_uuid_t(const struct pdu* pdu, unsigned long offset, bt_uuid_t* uuid);
+
+long
+read_bt_pin_code_t(const struct pdu* pdu, unsigned long off,
+                   bt_pin_code_t* pin_code);
+
+long
 write_pdu_at(struct pdu* pdu, unsigned long offset, const char* fmt, ...);
 
 long
+append_bt_property_t(struct pdu* pdu, const bt_property_t* property);
+
+long
 append_to_pdu(struct pdu* pdu, const char* fmt, ...);
+
+long
+append_bt_property_t(struct pdu* pdu, const bt_property_t* property);
+
+long
+append_bt_property_t_array(struct pdu* pdu,
+                           const bt_property_t* properties,
+                           unsigned long num_properties);
+
+long
+append_bt_bdaddr_t(struct pdu* pdu, const bt_bdaddr_t* addr);
+
+long
+append_bt_bdname_t(struct pdu* pdu, const bt_bdname_t* name);
