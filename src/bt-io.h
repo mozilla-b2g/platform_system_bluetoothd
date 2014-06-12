@@ -14,36 +14,7 @@
  * limitations under the License.
  */
 
-#include <stdlib.h>
-#include <unistd.h>
-#include <fdio/loop.h>
-#include <fdio/task.h>
-#include "compiler.h"
-#include "bt-io.h"
-
-static enum ioresult
-init(void* data ATTRIBS(UNUSED))
-{
-  if (init_task_queue() < 0)
-    goto err_init_task_queue;
-
-  if (init_bt_io() < 0)
-    goto err_init_bt_io;
-
-  return IO_OK;
-err_init_bt_io:
-  uninit_task_queue();
-err_init_task_queue:
-  return IO_ABORT;
-}
+#pragma once
 
 int
-main(int argc ATTRIBS(UNUSED), const char* argv[] ATTRIBS(UNUSED))
-{
-  if (epoll_loop(init, NULL, NULL) < 0)
-    goto err_epoll_loop;
-
-  exit(EXIT_SUCCESS);
-err_epoll_loop:
-  exit(EXIT_FAILURE);
-}
+init_bt_io(void);

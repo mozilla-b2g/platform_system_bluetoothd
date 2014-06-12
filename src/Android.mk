@@ -1,7 +1,8 @@
 LOCAL_PATH:= $(call my-dir)
 
 include $(CLEAR_VARS)
-LOCAL_SRC_FILES:= bt-pdubuf.c \
+LOCAL_SRC_FILES:= bt-io.c \
+                  bt-pdubuf.c \
                   bt-proto.c \
                   core.c \
                   core-io.c \
