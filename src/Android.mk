@@ -6,6 +6,8 @@ LOCAL_SRC_FILES:= bt-core.c \
                   bt-io.c \
                   bt-pdubuf.c \
                   bt-proto.c \
+                  bt-sock.c \
+                  bt-sock-io.c \
                   core.c \
                   core-io.c \
                   main.c \

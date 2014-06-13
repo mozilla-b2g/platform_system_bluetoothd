@@ -21,7 +21,8 @@
 
 enum {
   SERVICE_CORE = 0x00,
-  SERVICE_BT_CORE = 0x01
+  SERVICE_BT_CORE = 0x01,
+  SERVICE_BT_SOCK = 0x02
 };
 
 struct pdu {

@@ -14,21 +14,26 @@
  * limitations under the License.
  */
 
-#include "bt-proto.h"
-#include "bt-core-io.h"
-#include "bt-sock-io.h"
-#include "service.h"
+#pragma once
 
-bt_status_t (*service_handler[256])(const struct pdu*);
+#include <hardware/bluetooth.h>
+#include <hardware/bt_sock.h>
 
-register_func
-  (* const register_service[256])(unsigned char, void (*)(struct pdu_wbuf*)) = {
-  /* SERVICE_CORE is special and not handled here */
-  [SERVICE_BT_CORE] = register_bt_core,
-  [SERVICE_BT_SOCK] = register_bt_sock
-};
+int
+init_bt_sock(void);
 
-int (*unregister_service[256])() = {
-  [SERVICE_BT_CORE] = unregister_bt_core,
-  [SERVICE_BT_SOCK] = unregister_bt_sock
-};
+void
+uninit_bt_sock(void);
+
+/*
+ * Bluedroid wrapper functions
+ */
+
+bt_status_t
+bt_sock_listen(btsock_type_t type,
+               const char* service_name, const uint8_t* service_uuid,
+               int channel, int* sock_fd, int flags);
+
+bt_status_t
+bt_sock_connect(const bt_bdaddr_t* bd_addr, btsock_type_t type,
+                const uint8_t* uuid, int channel, int* sock_fd, int flags);
