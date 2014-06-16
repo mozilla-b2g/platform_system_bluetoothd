@@ -3,7 +3,8 @@ LOCAL_PATH:= $(call my-dir)
 include $(CLEAR_VARS)
 LOCAL_SRC_FILES:= bt-pdubuf.c \
                   bt-proto.c \
-                  main.c
+                  main.c \
+                  service.c
 LOCAL_C_INCLUDES := system/libfdio/include
 LOCAL_CFLAGS := -DANDROID_VERSION=$(PLATFORM_SDK_VERSION) -Wall -Werror
 LOCAL_SHARED_LIBRARIES := libfdio libcutils liblog
