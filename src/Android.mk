@@ -3,6 +3,8 @@ LOCAL_PATH:= $(call my-dir)
 include $(CLEAR_VARS)
 LOCAL_SRC_FILES:= bt-pdubuf.c \
                   bt-proto.c \
+                  core.c \
+                  core-io.c \
                   main.c \
                   service.c
 LOCAL_C_INCLUDES := system/libfdio/include
