@@ -64,10 +64,18 @@ handle_pdu_by_opcode(const struct pdu* cmd,
   return handle_pdu("opcode", cmd->opcode, cmd, handler);
 }
 
+static ptrdiff_t
+memdiff(const void* low, const void* high)
+{
+  return ((const char*)high) - ((const char*)low);
+}
+
 static long
 read_pdu_at_va(const struct pdu* pdu, unsigned long offset,
                const char* fmt, va_list ap)
 {
+  void** mem;
+  void* chr;
   void* dst;
   size_t len;
 
@@ -108,6 +116,22 @@ read_pdu_at_va(const struct pdu* pdu, unsigned long offset,
       case 'm': /* raw memory + length */
         dst = va_arg(ap, void*);
         len = va_arg(ap, size_t);
+        break;
+      case '0': /* raw 0-terminated memory */
+        mem = va_arg(ap, void**);
+        chr = memchr(mem, '\0', pdu->len - offset);
+        if (!chr) {
+          ALOGE("string not terminated");
+          return -1;
+        }
+        len = memdiff(mem, chr) + 1; /* include \0 byte */
+        errno = 0;
+        dst = malloc(len);
+        if (errno) {
+          ALOGE_ERRNO("malloc");
+          return -1;
+        }
+        *mem = dst;
         break;
       default:
         ALOGE("invalid format character %c", *fmt);
@@ -214,6 +238,7 @@ write_pdu_at_va(struct pdu* pdu, unsigned long offset, const char* fmt,
   int64_t l;
   uint64_t L;
   const void* src;
+  const void* chr;
   size_t len;
 
   for (; *fmt; ++fmt) {
@@ -261,6 +286,11 @@ write_pdu_at_va(struct pdu* pdu, unsigned long offset, const char* fmt,
       case 'm': /* raw memory + length */
         src = va_arg(ap, void*);
         len = va_arg(ap, size_t);
+        break;
+      case '0': /* raw 0-terminated memory */
+        src = va_arg(ap, void*);
+        chr = strchr(src, '\0');
+        len = memdiff(src, chr) + 1; /* include \0 byte */
         break;
       default:
         ALOGE("invalid format character %c", *fmt);
