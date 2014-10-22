@@ -14,24 +14,16 @@
  * limitations under the License.
  */
 
-#include "bt-proto.h"
-#include "bt-core-io.h"
-#include "bt-sock-io.h"
-#include "bt-hf-io.h"
-#include "service.h"
+#pragma once
 
-bt_status_t (*service_handler[256])(const struct pdu*);
+#include <hardware/bluetooth.h>
 
-register_func
-  (* const register_service[256])(unsigned char, void (*)(struct pdu_wbuf*)) = {
-  /* SERVICE_CORE is special and not handled here */
-  [SERVICE_BT_CORE] = register_bt_core,
-  [SERVICE_BT_SOCK] = register_bt_sock,
-  [SERVICE_BT_HF] = register_bt_hf
-};
+struct pdu;
+struct pdu_wbuf;
 
-int (*unregister_service[256])() = {
-  [SERVICE_BT_CORE] = unregister_bt_core,
-  [SERVICE_BT_SOCK] = unregister_bt_sock,
-  [SERVICE_BT_HF] = unregister_bt_hf
-};
+bt_status_t
+(*register_bt_hf(unsigned char mode,
+                 void (*send_pdu_cb)(struct pdu_wbuf*)))(const struct pdu*);
+
+int
+unregister_bt_hf(void);

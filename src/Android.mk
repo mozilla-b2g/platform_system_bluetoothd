@@ -4,6 +4,8 @@ include $(CLEAR_VARS)
 LOCAL_SRC_FILES:= bt-core.c \
                   bt-core-io.c \
                   bt-io.c \
+                  bt-hf.c \
+                  bt-hf-io.c \
                   bt-pdubuf.c \
                   bt-proto.c \
                   bt-sock.c \
