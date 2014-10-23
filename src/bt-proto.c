@@ -303,6 +303,187 @@ write_pdu_at_va(struct pdu* pdu, unsigned long offset, const char* fmt,
   return offset;
 }
 
+#if ANDROID_VERSION >= 18
+long
+read_btrc_player_attr_t(const struct pdu* pdu, unsigned long off,
+                        btrc_player_attr_t* attr)
+{
+  long newoff;
+  uint8_t value;
+
+  newoff = read_pdu_at(pdu, off, "C", &value);
+  if (newoff < 0)
+    return -1;
+
+  *attr = (btrc_player_attr_t)value;
+
+  return newoff;
+}
+
+long
+read_btrc_player_attr_t_array(const struct pdu* pdu, unsigned long off,
+                              btrc_player_attr_t* attr,
+                              unsigned long num_attrs)
+{
+  long newoff;
+  unsigned long i;
+
+  for (newoff = off, i = 0; (newoff >= 0) && (i < num_attrs); ++i) {
+    newoff = read_btrc_player_attr_t(pdu, newoff, attr + i);
+  }
+
+  return newoff;
+}
+
+long
+read_btrc_player_settings_t(const struct pdu* pdu, unsigned long off,
+                            btrc_player_settings_t* settings)
+{
+  long newoff;
+  uint8_t i;
+
+  assert(settings);
+
+  newoff = read_pdu_at(pdu, off, "C", &settings->num_attr);
+
+  for (i = 0; (newoff >= 0) && (i < settings->num_attr); ++i) {
+    newoff = read_pdu_at(pdu, newoff, "CC",
+                         settings->attr_ids + i,
+                         settings->attr_values + i);
+  }
+
+  return newoff;
+}
+
+long
+read_btrc_player_setting_text_t(const struct pdu* pdu, unsigned long off,
+                                btrc_player_setting_text_t* attr)
+{
+  long newoff;
+  uint8_t len;
+
+  assert(attr);
+
+  newoff = read_pdu_at(pdu, off, "CC", &attr->id, &len);
+  if (newoff < 0)
+    return -1;
+  newoff = read_pdu_at(pdu, newoff, "m", attr->text, len);
+
+  return newoff;
+}
+
+long
+read_btrc_player_setting_text_t_array(const struct pdu* pdu,
+                                      unsigned long off,
+                                      btrc_player_setting_text_t* attr,
+                                      unsigned long num_attrs)
+{
+  long newoff;
+  unsigned long i;
+
+  assert(attr || !num_attrs);
+
+  for (newoff = off, i = 0; (newoff >= 0) && (i < num_attrs); ++i) {
+    newoff = read_btrc_player_setting_text_t(pdu, newoff, attr + i);
+  }
+
+  return newoff;
+}
+
+long
+read_btrc_element_attr_val_t(const struct pdu* pdu, unsigned long off,
+                             btrc_element_attr_val_t* attr)
+{
+  long newoff;
+  uint8_t attr_id, len;
+
+  assert(attr);
+
+  newoff = read_pdu_at(pdu, off, "CC", &attr_id, &len);
+  if (newoff < 0)
+    return -1;
+
+  attr->attr_id = attr_id;
+
+  return read_pdu_at(pdu, newoff, "m", attr->text, len);
+}
+
+long
+read_btrc_element_attr_val_t_array(const struct pdu* pdu, unsigned long off,
+                                   btrc_element_attr_val_t* attr,
+                                   unsigned long num_attrs)
+{
+  long newoff;
+  unsigned long i;
+
+  assert(attr || !num_attrs);
+
+  for (newoff = off, i = 0; (newoff >= 0) && (i < num_attrs); ++i) {
+    newoff = read_btrc_element_attr_val_t(pdu, newoff, attr + i);
+  }
+
+  return newoff;
+}
+
+long
+read_btrc_play_status_t(const struct pdu* pdu, unsigned long off,
+                        btrc_play_status_t* p_val)
+{
+  long newoff;
+  uint8_t value;
+
+  newoff = read_pdu_at(pdu, off, "C", &value);
+  if (newoff < 0)
+    return -1;
+
+  *p_val = value;
+
+  return newoff;
+}
+
+long
+read_btrc_uid_t(const struct pdu* pdu, unsigned long off, btrc_uid_t p_val)
+{
+  return read_pdu_at(pdu, off, "m", p_val, BTRC_UID_SIZE);
+}
+
+long
+read_btrc_register_notification_t(const struct pdu* pdu, unsigned long off,
+                                  btrc_event_id_t event_id,
+                                  btrc_register_notification_t *param)
+{
+  long newoff;
+  uint8_t len;
+
+  assert(param);
+
+  newoff = read_pdu_at(pdu, off, "C", &len);
+
+  switch (event_id) {
+    case BTRC_EVT_PLAY_STATUS_CHANGED:
+      newoff = read_btrc_play_status_t(pdu, newoff, &param->play_status);
+      break;
+    case BTRC_EVT_TRACK_CHANGE:
+      newoff = read_btrc_uid_t(pdu, newoff, param->track);
+      break;
+    case BTRC_EVT_TRACK_REACHED_END:
+    case BTRC_EVT_TRACK_REACHED_START:
+      break;
+    case BTRC_EVT_PLAY_POS_CHANGED:
+      newoff = read_pdu_at(pdu, newoff, "I", &param->song_pos);
+      break;
+    case BTRC_EVT_APP_SETTINGS_CHANGED:
+      newoff = read_btrc_player_settings_t(pdu, newoff, &param->player_setting);
+      break;
+    default:
+      ALOGE("Unknown event id %d", (int)event_id);
+      return -1;
+  }
+
+  return newoff;
+}
+#endif
+
 long
 write_pdu_at(struct pdu* pdu, unsigned long offset, const char* fmt, ...)
 {
@@ -418,3 +599,52 @@ append_bt_bdname_t(struct pdu* pdu, const bt_bdname_t* name)
 {
   return append_to_pdu(pdu, "m", name->name, (size_t)249);
 }
+
+#if ANDROID_VERSION >= 18
+long
+append_btrc_player_attr_t_array(struct pdu* pdu,
+                                const btrc_player_attr_t* attr,
+                                unsigned long num_attrs)
+{
+  long off;
+  unsigned long i;
+
+  for (off = pdu->len, i = 0; (off >= 0) && (i < num_attrs); ++i) {
+    off = append_to_pdu(pdu, "C", (uint8_t)attr[i]);
+  }
+
+  return off;
+}
+
+long
+append_btrc_media_attr_t_array(struct pdu* pdu,
+                               const btrc_media_attr_t* attr,
+                               unsigned long num_attrs)
+{
+  long off;
+  unsigned long i;
+
+  for (off = pdu->len, i = 0; (off >= 0) && (i < num_attrs); ++i) {
+    off = append_to_pdu(pdu, "C", (uint8_t)attr[i]);
+  }
+
+  return off;
+}
+
+long
+append_btrc_player_settings_t(struct pdu* pdu,
+                              const btrc_player_settings_t* settings)
+{
+  long off;
+  unsigned long i;
+
+  off = append_to_pdu(pdu, "C", settings->num_attr);
+
+  for (i = 0; (off >= 0) && (i < settings->num_attr); ++i) {
+    off = append_to_pdu(pdu, "CC", settings->attr_ids[i],
+                                   settings->attr_values[i]);
+  }
+
+  return off;
+}
+#endif

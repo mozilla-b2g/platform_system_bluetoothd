@@ -19,6 +19,7 @@
 #include "bt-sock-io.h"
 #include "bt-hf-io.h"
 #include "bt-av-io.h"
+#include "bt-rc-io.h"
 #include "service.h"
 
 bt_status_t (*service_handler[256])(const struct pdu*);
@@ -29,12 +30,14 @@ register_func
   [SERVICE_BT_CORE] = register_bt_core,
   [SERVICE_BT_SOCK] = register_bt_sock,
   [SERVICE_BT_HF] = register_bt_hf,
-  [SERVICE_BT_AV] = register_bt_av
+  [SERVICE_BT_AV] = register_bt_av,
+  [SERVICE_BT_RC] = register_bt_rc
 };
 
 int (*unregister_service[256])() = {
   [SERVICE_BT_CORE] = unregister_bt_core,
   [SERVICE_BT_SOCK] = unregister_bt_sock,
   [SERVICE_BT_HF] = unregister_bt_hf,
-  [SERVICE_BT_AV] = unregister_bt_av
+  [SERVICE_BT_AV] = unregister_bt_av,
+  [SERVICE_BT_RC] = unregister_bt_rc
 };
