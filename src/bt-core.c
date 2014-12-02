@@ -229,7 +229,11 @@ bt_core_create_bond(const bt_bdaddr_t* bd_addr)
   assert(bt_interface);
   assert(bt_interface->create_bond);
 
+#if ANDROID_VERSION >= 21
+  return bt_interface->create_bond(bd_addr, 0 /* TRANSPORT_AUTO */);
+#else
   return bt_interface->create_bond(bd_addr);
+#endif
 }
 
 int
