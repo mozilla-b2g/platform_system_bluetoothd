@@ -255,7 +255,7 @@ err_handle_pdu_by_service:
   init_pdu(&wbuf->buf.pdu, cmd->service, 0);
   append_to_pdu(&wbuf->buf.pdu, "C", (uint8_t)status);
   send_pdu(wbuf);
-  return -1;
+  return 0; /* signal success because we replied with an error */
 }
 
 static enum ioresult
