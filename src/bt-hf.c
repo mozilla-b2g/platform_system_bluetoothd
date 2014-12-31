@@ -18,11 +18,12 @@
 #include "bt-core.h"
 #include "bt-hf.h"
 #include "log.h"
+#include "compiler.h"
 
 static const bthf_interface_t* bthf_interface;
 
 int
-init_bt_hf(bthf_callbacks_t* callbacks)
+init_bt_hf(bthf_callbacks_t* callbacks, int max_num_clients ATTRIBS(UNUSED))
 {
   bt_status_t status;
 
@@ -38,7 +39,11 @@ init_bt_hf(bthf_callbacks_t* callbacks)
   }
 
   assert(bthf_interface->init);
+#if ANDROID_VERSION >= 21
+  status = bthf_interface->init(callbacks, max_num_clients);
+#else
   status = bthf_interface->init(callbacks);
+#endif
   if (status != BT_STATUS_SUCCESS) {
     ALOGE("bthf_interface_t::init failed");
     return -1;
@@ -98,30 +103,43 @@ bt_hf_disconnect_audio(bt_bdaddr_t* bd_addr)
 }
 
 bt_status_t
-bt_hf_start_voice_recognition()
+bt_hf_start_voice_recognition(bt_bdaddr_t* bd_addr ATTRIBS(UNUSED))
 {
   assert(bthf_interface);
   assert(bthf_interface->start_voice_recognition);
 
+#if ANDROID_VERSION >= 21
+  return bthf_interface->start_voice_recognition(bd_addr);
+#else
   return bthf_interface->start_voice_recognition();
+#endif
 }
 
 bt_status_t
-bt_hf_stop_voice_recognition()
+bt_hf_stop_voice_recognition(bt_bdaddr_t* bd_addr ATTRIBS(UNUSED))
 {
   assert(bthf_interface);
   assert(bthf_interface->stop_voice_recognition);
 
+#if ANDROID_VERSION >= 21
+  return bthf_interface->stop_voice_recognition(bd_addr);
+#else
   return bthf_interface->stop_voice_recognition();
+#endif
 }
 
 bt_status_t
-bt_hf_volume_control(bthf_volume_type_t type, int volume)
+bt_hf_volume_control(bthf_volume_type_t type, int volume,
+                     bt_bdaddr_t* bd_addr ATTRIBS(UNUSED))
 {
   assert(bthf_interface);
   assert(bthf_interface->volume_control);
 
+#if ANDROID_VERSION >= 21
+  return bthf_interface->volume_control(type, volume, bd_addr);
+#else
   return bthf_interface->volume_control(type, volume);
+#endif
 }
 
 bt_status_t
@@ -137,56 +155,83 @@ bt_hf_device_status_notification(bthf_network_state_t ntk_state,
 }
 
 bt_status_t
-bt_hf_cops_response(const char* cops)
+bt_hf_cops_response(const char* cops, bt_bdaddr_t* bd_addr ATTRIBS(UNUSED))
 {
   assert(bthf_interface);
   assert(bthf_interface->cops_response);
 
+#if ANDROID_VERSION >= 21
+  return bthf_interface->cops_response(cops, bd_addr);
+#else
   return bthf_interface->cops_response(cops);
+#endif
 }
 
 bt_status_t
 bt_hf_cind_response(int svc, int num_active, int num_held,
                     bthf_call_state_t call_setup_state,
-                    int signal, int roam, int batt_chg)
+                    int signal, int roam, int batt_chg,
+                    bt_bdaddr_t* bd_addr ATTRIBS(UNUSED))
 {
   assert(bthf_interface);
   assert(bthf_interface->cind_response);
 
+#if ANDROID_VERSION >= 21
+  return bthf_interface->cind_response(svc, num_active, num_held,
+                                       call_setup_state, signal, roam,
+                                       batt_chg, bd_addr);
+#else
   return bthf_interface->cind_response(svc, num_active, num_held,
                                        call_setup_state, signal, roam,
                                        batt_chg);
+#endif
 }
 
 bt_status_t
-bt_hf_formatted_at_response(const char* rsp)
+bt_hf_formatted_at_response(const char* rsp,
+                            bt_bdaddr_t* bd_addr ATTRIBS(UNUSED))
 {
   assert(bthf_interface);
   assert(bthf_interface->formatted_at_response);
 
+#if ANDROID_VERSION >= 21
+  return bthf_interface->formatted_at_response(rsp, bd_addr);
+#else
   return bthf_interface->formatted_at_response(rsp);
+#endif
 }
 
 bt_status_t
-bt_hf_at_response(bthf_at_response_t response_code, int error_code)
+bt_hf_at_response(bthf_at_response_t response_code, int error_code,
+                  bt_bdaddr_t* bd_addr ATTRIBS(UNUSED))
 {
   assert(bthf_interface);
   assert(bthf_interface->at_response);
 
+#if ANDROID_VERSION >= 21
+  return bthf_interface->at_response(response_code, error_code, bd_addr);
+#else
   return bthf_interface->at_response(response_code, error_code);
+#endif
 }
 
 bt_status_t
 bt_hf_clcc_response(int index, bthf_call_direction_t dir,
                     bthf_call_state_t state, bthf_call_mode_t mode,
                     bthf_call_mpty_type_t mpty, const char* number,
-                    bthf_call_addrtype_t type)
+                    bthf_call_addrtype_t type,
+                    bt_bdaddr_t* bd_addr ATTRIBS(UNUSED))
 {
   assert(bthf_interface);
   assert(bthf_interface->clcc_response);
 
+#if ANDROID_VERSION >= 21
+  return bthf_interface->clcc_response(index, dir, state, mode, mpty, number,
+                                       type, bd_addr);
+#else
   return bthf_interface->clcc_response(index, dir, state, mode, mpty, number,
                                        type);
+#endif
 }
 
 bt_status_t
