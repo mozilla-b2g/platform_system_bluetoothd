@@ -26,6 +26,7 @@ typedef bt_status_t (*register_func)(const struct pdu*);
 extern bt_status_t (*service_handler[256])(const struct pdu*);
 
 extern register_func
-  (* const register_service[256])(unsigned char, void (*)(struct pdu_wbuf*));
+  (* const register_service[256])(unsigned char, unsigned long,
+                                  void (*)(struct pdu_wbuf*));
 
 extern int (*unregister_service[256])(void);

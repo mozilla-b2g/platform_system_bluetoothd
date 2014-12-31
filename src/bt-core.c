@@ -27,8 +27,13 @@ static const bt_interface_t* bt_interface;
 #define container(_t, _v, _m) \
   ( (_t*)( ((const unsigned char*)(_v)) - offsetof(_t, _m) ) )
 
+#if ANDROID_VERSION >= 21
+int
+init_bt_core(bt_callbacks_t* callbacks, bt_os_callouts_t* callouts)
+#else
 int
 init_bt_core(bt_callbacks_t* callbacks)
+#endif
 {
   int status;
   int err;
@@ -70,7 +75,18 @@ init_bt_core(bt_callbacks_t* callbacks)
     goto err_bt_interface_init;
   }
 
+#if ANDROID_VERSION >= 21
+  status = bt_interface->set_os_callouts(callouts);
+  if (status != BT_STATUS_SUCCESS) {
+    ALOGE("bt_interface_t::set_os_callouts failed");
+    goto err_bt_interface_set_os_callouts;
+  }
+#endif
+
   return 0;
+#if ANDROID_VERSION >= 21
+err_bt_interface_set_os_callouts:
+#endif
 err_bt_interface_init:
   bt_interface = NULL;
 err_get_bluetooth_interface:
@@ -224,12 +240,16 @@ bt_core_cancel_discovery()
 }
 
 int
-bt_core_create_bond(const bt_bdaddr_t* bd_addr)
+bt_core_create_bond(const bt_bdaddr_t* bd_addr, int transport ATTRIBS(UNUSED))
 {
   assert(bt_interface);
   assert(bt_interface->create_bond);
 
+#if ANDROID_VERSION >= 21
+  return bt_interface->create_bond(bd_addr, transport);
+#else
   return bt_interface->create_bond(bd_addr);
+#endif
 }
 
 int
