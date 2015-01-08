@@ -26,7 +26,8 @@ struct pdu_wbuf;
 static void (*send_pdu)(struct pdu_wbuf*);
 
 int
-core_register_module(unsigned char service, unsigned char mode)
+core_register_module(unsigned char service, unsigned char mode,
+                     unsigned long max_num_clients)
 {
   bt_status_t (*handler)(const struct pdu*);
 
@@ -38,7 +39,7 @@ core_register_module(unsigned char service, unsigned char mode)
     ALOGE("invalid service id 0x%x", service);
     return -1;
   }
-  handler = register_service[service](mode, send_pdu);
+  handler = register_service[service](mode, max_num_clients, send_pdu);
   if (!handler)
     return -1;
 

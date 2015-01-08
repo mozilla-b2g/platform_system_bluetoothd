@@ -175,6 +175,7 @@ bt_sock_handler(const struct pdu* cmd)
 
 bt_status_t
 (*register_bt_sock(unsigned char mode ATTRIBS(UNUSED),
+                   unsigned long max_num_clients ATTRIBS(UNUSED),
                    void (*send_pdu_cb)(struct pdu_wbuf*)))(const struct pdu*)
 {
   if (init_bt_sock() < 0)

@@ -752,6 +752,7 @@ bt_rc_handler(const struct pdu* cmd)
 bt_status_t
 (*register_bt_rc(
   unsigned char mode ATTRIBS(UNUSED),
+  unsigned long max_num_clients ATTRIBS(UNUSED),
   void (*send_pdu_cb)(struct pdu_wbuf*) ATTRIBS(UNUSED)))(const struct pdu*)
 {
 #if ANDROID_VERSION >= 18

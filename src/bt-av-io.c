@@ -98,6 +98,16 @@ cleanup:
   cleanup_pdu_wbuf(wbuf);
 }
 
+#if ANDROID_VERSION >= 21
+static void
+audio_config_cb(bt_bdaddr_t* bd_addr ATTRIBS(UNUSED),
+                uint32_t sample_rate ATTRIBS(UNUSED),
+                uint8_t channel_count ATTRIBS(UNUSED))
+{
+  /* TODO: Support HFP 1.6 HF role */
+}
+#endif
+
 /*
  * Commands/Responses
  */
@@ -169,12 +179,16 @@ bt_av_handler(const struct pdu* cmd)
 
 bt_status_t
 (*register_bt_av(unsigned char mode ATTRIBS(UNUSED),
+                 unsigned long max_num_clients ATTRIBS(UNUSED),
                  void (*send_pdu_cb)(struct pdu_wbuf*)))(const struct pdu*)
 {
   static btav_callbacks_t btav_callbacks = {
     .size = sizeof(btav_callbacks),
     .connection_state_cb = connection_state_cb,
-    .audio_state_cb = audio_state_cb
+    .audio_state_cb = audio_state_cb,
+#if ANDROID_VERSION >= 21
+    .audio_config_cb = audio_config_cb
+#endif
   };
 
   if (init_bt_av(&btav_callbacks) < 0)
