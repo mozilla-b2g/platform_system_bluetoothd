@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2014  Mozilla Foundation
+ * Copyright (C) 2014-2015  Mozilla Foundation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -21,13 +21,19 @@
 #include "compiler.h"
 #include "bt-io.h"
 
+struct options {
+  const char* socket_name;
+};
+
 static enum ioresult
 init(void* data ATTRIBS(UNUSED))
 {
+  const struct options* options = data;
+
   if (init_task_queue() < 0)
     goto err_init_task_queue;
 
-  if (init_bt_io() < 0)
+  if (init_bt_io(options->socket_name) < 0)
     goto err_init_bt_io;
 
   return IO_OK;
@@ -37,10 +43,23 @@ err_init_task_queue:
   return IO_ABORT;
 }
 
+static void
+uninit(void* data ATTRIBS(UNUSED))
+{
+  uninit_bt_io();
+  uninit_task_queue();
+}
+
 int
 main(int argc ATTRIBS(UNUSED), const char* argv[] ATTRIBS(UNUSED))
 {
-  if (epoll_loop(init, NULL, NULL) < 0)
+  static const char DEFAULT_SOCKET_NAME[] = "bluetoothd";
+
+  struct options options = {
+    .socket_name = DEFAULT_SOCKET_NAME
+  };
+
+  if (epoll_loop(init, uninit, &options) < 0)
     goto err_epoll_loop;
 
   exit(EXIT_SUCCESS);
