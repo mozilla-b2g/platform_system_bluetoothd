@@ -25,7 +25,8 @@
 bt_status_t (*service_handler[256])(const struct pdu*);
 
 register_func
-  (* const register_service[256])(unsigned char, void (*)(struct pdu_wbuf*)) = {
+  (* const register_service[256])(unsigned char, unsigned long,
+                                  void (*)(struct pdu_wbuf*)) = {
   /* SERVICE_CORE is special and not handled here */
   [SERVICE_BT_CORE] = register_bt_core,
   [SERVICE_BT_SOCK] = register_bt_sock,

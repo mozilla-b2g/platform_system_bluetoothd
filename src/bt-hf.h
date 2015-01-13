@@ -20,7 +20,7 @@
 #include <hardware/bt_hf.h>
 
 int
-init_bt_hf(bthf_callbacks_t* callbacks);
+init_bt_hf(bthf_callbacks_t* callbacks, int max_num_clients);
 
 void
 uninit_bt_hf(void);
@@ -42,13 +42,13 @@ bt_status_t
 bt_hf_disconnect_audio(bt_bdaddr_t* bd_addr);
 
 bt_status_t
-bt_hf_start_voice_recognition(void);
+bt_hf_start_voice_recognition(bt_bdaddr_t* bd_addr);
 
 bt_status_t
-bt_hf_stop_voice_recognition(void);
+bt_hf_stop_voice_recognition(bt_bdaddr_t* bd_addr);
 
 bt_status_t
-bt_hf_volume_control(bthf_volume_type_t type, int volume);
+bt_hf_volume_control(bthf_volume_type_t type, int volume, bt_bdaddr_t* bd_addr);
 
 bt_status_t
 bt_hf_device_status_notification(bthf_network_state_t ntk_state,
@@ -56,26 +56,32 @@ bt_hf_device_status_notification(bthf_network_state_t ntk_state,
                                  int batt_chg);
 
 bt_status_t
-bt_hf_cops_response(const char* cops);
+bt_hf_cops_response(const char* cops, bt_bdaddr_t* bd_addr);
 
 bt_status_t
 bt_hf_cind_response(int svc, int num_active, int num_held,
                     bthf_call_state_t call_setup_state,
-                    int signal, int roam, int batt_chg);
+                    int signal, int roam, int batt_chg, bt_bdaddr_t* bd_addr);
 
 bt_status_t
-bt_hf_formatted_at_response(const char* rsp);
+bt_hf_formatted_at_response(const char* rsp, bt_bdaddr_t* bd_addr);
 
 bt_status_t
-bt_hf_at_response(bthf_at_response_t response_code, int error_code);
+bt_hf_at_response(bthf_at_response_t response_code, int error_code,
+                  bt_bdaddr_t* bd_addr);
 
 bt_status_t
 bt_hf_clcc_response(int index, bthf_call_direction_t dir,
                     bthf_call_state_t state, bthf_call_mode_t mode,
                     bthf_call_mpty_type_t mpty, const char* number,
-                    bthf_call_addrtype_t type);
+                    bthf_call_addrtype_t type, bt_bdaddr_t* bd_addr);
 
 bt_status_t
 bt_hf_phone_state_change(int num_active, int num_held,
                          bthf_call_state_t call_setup_state,
                          const char* number, bthf_call_addrtype_t type);
+
+#if ANDROID_VERSION >= 21
+bt_status_t
+bt_hf_configure_wbs(bt_bdaddr_t* bd_addr, bthf_wbs_config_t config);
+#endif

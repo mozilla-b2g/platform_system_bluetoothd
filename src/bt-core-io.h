@@ -20,7 +20,7 @@ struct pdu;
 struct pdu_wbuf;
 
 bt_status_t
-(*register_bt_core(unsigned char mode,
+(*register_bt_core(unsigned char mode, unsigned long max_num_clients,
                    void (*send_ntf_cb)(struct pdu_wbuf*)))(const struct pdu*);
 
 int

@@ -458,6 +458,38 @@ cleanup:
 }
 #endif
 
+#if ANDROID_VERSION >= 21
+static void
+energy_info_cb(bt_activity_energy_info *energy_info ATTRIBS(UNUSED))
+{
+  /* nothing to do */
+}
+
+static bool
+set_wake_alarm(uint64_t delay_millis ATTRIBS(UNUSED),
+               bool should_wake ATTRIBS(UNUSED),
+               alarm_cb cb ATTRIBS(UNUSED),
+               void *data ATTRIBS(UNUSED))
+{
+  /* FIXME: need to be implemented in later patches */
+  return true;
+};
+
+static int
+acquire_wake_lock(const char *lock_name ATTRIBS(UNUSED))
+{
+  /* FIXME: need to be implemented in later patches */
+  return BT_STATUS_SUCCESS;
+};
+
+static int
+release_wake_lock(const char *lock_name ATTRIBS(UNUSED))
+{
+  /* FIXME: need to be implemented in later patches */
+  return BT_STATUS_SUCCESS;
+};
+#endif
+
 /*
  * Commands/Responses
  */
@@ -796,18 +828,26 @@ err_bt_core_cancel_discovery:
 static bt_status_t
 create_bond(const struct pdu* cmd)
 {
+  long off;
   bt_bdaddr_t bd_addr;
   struct pdu_wbuf* wbuf;
   int status;
+  uint8_t transport = 0; /* TRANSPORT_AUTO */
 
-  if (read_bt_bdaddr_t(cmd, 0, &bd_addr) < 0)
+  off = read_bt_bdaddr_t(cmd, 0, &bd_addr);
+  if (off < 0)
     return BT_STATUS_PARM_INVALID;
+
+#if ANDROID_VERSION >= 21
+  if (read_pdu_at(cmd, off, "C", &transport) < 0)
+    return BT_STATUS_PARM_INVALID;
+#endif
 
   wbuf = create_pdu_wbuf(0, 0, NULL);
   if (!wbuf)
     return BT_STATUS_NOMEM;
 
-  status = bt_core_create_bond(&bd_addr);
+  status = bt_core_create_bond(&bd_addr, transport);
   if (status != BT_STATUS_SUCCESS)
     goto err_bt_core_create_bond;
 
@@ -1069,6 +1109,7 @@ bt_core_handler(const struct pdu* cmd)
 
 bt_status_t
 (*register_bt_core(unsigned char mode ATTRIBS(UNUSED),
+                   unsigned long max_num_clients ATTRIBS(UNUSED),
                    void (*send_pdu_cb)(struct pdu_wbuf*)))(const struct pdu*)
 {
   static bt_callbacks_t bt_callbacks = {
@@ -1085,13 +1126,29 @@ bt_status_t
     .thread_evt_cb = thread_evt_cb,
     .dut_mode_recv_cb = dut_mode_recv_cb,
 #if ANDROID_VERSION >= 18
-    .le_test_mode_cb = le_test_mode_cb
+    .le_test_mode_cb = le_test_mode_cb,
+#endif
+#if ANDROID_VERSION >= 21
+    .energy_info_cb = energy_info_cb
 #endif
   };
 
+#if ANDROID_VERSION >= 21
+  static bt_os_callouts_t bt_os_callouts = {
+    .size = sizeof(bt_os_callouts),
+    .set_wake_alarm = set_wake_alarm,
+    .acquire_wake_lock = acquire_wake_lock,
+    .release_wake_lock = release_wake_lock
+  };
+#endif
+
   assert(send_pdu_cb);
 
+#if ANDROID_VERSION >= 21
+  if (init_bt_core(&bt_callbacks, &bt_os_callouts) < 0)
+#else
   if (init_bt_core(&bt_callbacks) < 0)
+#endif
     return NULL;
 
   send_pdu = send_pdu_cb;

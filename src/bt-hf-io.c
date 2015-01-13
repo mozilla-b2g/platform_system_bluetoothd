@@ -39,6 +39,7 @@ enum {
   OPCODE_AT_RESPONSE = 0x0c,
   OPCODE_CLCC_RESPONSE = 0x0d,
   OPCODE_PHONE_STATE_CHANGE = 0x0e,
+  OPCODE_CONFIGURE_WBS = 0x0f,
   /* notifications */
   OPCODE_CONNECTION_STATE_NTF = 0x81,
   OPCODE_AUDIO_STATE_NTF = 0x82,
@@ -125,11 +126,16 @@ cleanup:
 }
 
 static void
+#if ANDROID_VERSION >= 21
+vr_cmd_cb(bthf_vr_state_t state, bt_bdaddr_t* bd_addr)
+#else
 vr_cmd_cb(bthf_vr_state_t state)
+#endif
 {
   struct pdu_wbuf* wbuf;
 
-  wbuf = create_pdu_wbuf(1, /* voice-recognition state */
+  wbuf = create_pdu_wbuf(1 + /* voice-recognition state */
+                         6, /* address */
                          0, NULL);
   if (!wbuf)
     return;
@@ -137,6 +143,10 @@ vr_cmd_cb(bthf_vr_state_t state)
   init_pdu(&wbuf->buf.pdu, SERVICE_BT_HF, OPCODE_VR_CMD_NTF);
   if (append_to_pdu(&wbuf->buf.pdu, "C", (uint8_t)state) < 0)
     goto cleanup;
+#if ANDROID_VERSION >= 21
+  if (append_bt_bdaddr_t(&wbuf->buf.pdu, bd_addr) < 0)
+    goto cleanup;
+#endif
 
   if (run_task(send_ntf_pdu, wbuf) < 0)
     goto cleanup;
@@ -147,15 +157,24 @@ cleanup:
 }
 
 static void
+#if ANDROID_VERSION >= 21
+answer_call_cmd_cb(bt_bdaddr_t* bd_addr)
+#else
 answer_call_cmd_cb(void)
+#endif
 {
   struct pdu_wbuf* wbuf;
 
-  wbuf = create_pdu_wbuf(0, 0, NULL);
+  wbuf = create_pdu_wbuf(6, /* address */
+                         0, NULL);
   if (!wbuf)
     return;
 
   init_pdu(&wbuf->buf.pdu, SERVICE_BT_HF, OPCODE_ANSWER_CALL_CMD_NTF);
+#if ANDROID_VERSION >= 21
+  if (append_bt_bdaddr_t(&wbuf->buf.pdu, bd_addr) < 0)
+    goto cleanup;
+#endif
 
   if (run_task(send_ntf_pdu, wbuf) < 0)
     goto cleanup;
@@ -166,15 +185,24 @@ cleanup:
 }
 
 static void
+#if ANDROID_VERSION >= 21
+hangup_call_cmd_cb(bt_bdaddr_t* bd_addr)
+#else
 hangup_call_cmd_cb(void)
+#endif
 {
   struct pdu_wbuf* wbuf;
 
-  wbuf = create_pdu_wbuf(0, 0, NULL);
+  wbuf = create_pdu_wbuf(6, /* address */
+                         0, NULL);
   if (!wbuf)
     return;
 
   init_pdu(&wbuf->buf.pdu, SERVICE_BT_HF, OPCODE_HANGUP_CALL_CMD_NTF);
+#if ANDROID_VERSION >= 21
+  if (append_bt_bdaddr_t(&wbuf->buf.pdu, bd_addr) < 0)
+    goto cleanup;
+#endif
 
   if (run_task(send_ntf_pdu, wbuf) < 0)
     goto cleanup;
@@ -185,12 +213,17 @@ cleanup:
 }
 
 static void
+#if ANDROID_VERSION >= 21
+volume_cmd_cb(bthf_volume_type_t type, int volume, bt_bdaddr_t* bd_addr)
+#else
 volume_cmd_cb(bthf_volume_type_t type, int volume)
+#endif
 {
   struct pdu_wbuf* wbuf;
 
   wbuf = create_pdu_wbuf(1 + /* volume type */
-                         1, /* volume */
+                         1 + /* volume */
+                         6, /* address */
                          0, NULL);
   if (!wbuf)
     return;
@@ -198,6 +231,10 @@ volume_cmd_cb(bthf_volume_type_t type, int volume)
   init_pdu(&wbuf->buf.pdu, SERVICE_BT_HF, OPCODE_VOLUME_CMD_NTF);
   if (append_to_pdu(&wbuf->buf.pdu, "CC", (uint8_t)type, (uint8_t)volume) < 0)
     goto cleanup;
+#if ANDROID_VERSION >= 21
+  if (append_bt_bdaddr_t(&wbuf->buf.pdu, bd_addr) < 0)
+    goto cleanup;
+#endif
 
   if (run_task(send_ntf_pdu, wbuf) < 0)
     goto cleanup;
@@ -208,7 +245,11 @@ cleanup:
 }
 
 static void
+#if ANDROID_VERSION >= 21
+dial_call_cmd_cb(char* number, bt_bdaddr_t* bd_addr)
+#else
 dial_call_cmd_cb(char* number)
+#endif
 {
   struct pdu_wbuf* wbuf;
   size_t len;
@@ -217,12 +258,17 @@ dial_call_cmd_cb(char* number)
 
   len = strlen(number) + 1;
 
-  wbuf = create_pdu_wbuf(len, /* phone number */
+  wbuf = create_pdu_wbuf(6 + /* address */
+                         len, /* phone number */
                          0, NULL);
   if (!wbuf)
     return;
 
   init_pdu(&wbuf->buf.pdu, SERVICE_BT_HF, OPCODE_DIAL_CALL_CMD_NTF);
+#if ANDROID_VERSION >= 21
+  if (append_bt_bdaddr_t(&wbuf->buf.pdu, bd_addr) < 0)
+    goto cleanup;
+#endif
   if (append_to_pdu(&wbuf->buf.pdu, "m", number, len) < 0)
     goto cleanup;
 
@@ -235,11 +281,16 @@ cleanup:
 }
 
 static void
+#if ANDROID_VERSION >= 21
+dtmf_cmd_cb(char tone, bt_bdaddr_t* bd_addr)
+#else
 dtmf_cmd_cb(char tone)
+#endif
 {
   struct pdu_wbuf* wbuf;
 
-  wbuf = create_pdu_wbuf(1, /* tone */
+  wbuf = create_pdu_wbuf(1 + /* tone */
+                         6, /* address */
                          0, NULL);
   if (!wbuf)
     return;
@@ -247,6 +298,10 @@ dtmf_cmd_cb(char tone)
   init_pdu(&wbuf->buf.pdu, SERVICE_BT_HF, OPCODE_DTMF_CMD_NTF);
   if (append_to_pdu(&wbuf->buf.pdu, "c", (int8_t)tone) < 0)
     goto cleanup;
+#if ANDROID_VERSION >= 21
+  if (append_bt_bdaddr_t(&wbuf->buf.pdu, bd_addr) < 0)
+    goto cleanup;
+#endif
 
   if (run_task(send_ntf_pdu, wbuf) < 0)
     goto cleanup;
@@ -257,11 +312,16 @@ cleanup:
 }
 
 static void
+#if ANDROID_VERSION >= 21
+nrec_cmd_cb(bthf_nrec_t nrec, bt_bdaddr_t* bd_addr)
+#else
 nrec_cmd_cb(bthf_nrec_t nrec)
+#endif
 {
   struct pdu_wbuf* wbuf;
 
-  wbuf = create_pdu_wbuf(1, /* NREC */
+  wbuf = create_pdu_wbuf(1 + /* NREC */
+                         6, /* address */
                          0, NULL);
   if (!wbuf)
     return;
@@ -269,6 +329,10 @@ nrec_cmd_cb(bthf_nrec_t nrec)
   init_pdu(&wbuf->buf.pdu, SERVICE_BT_HF, OPCODE_NREC_CMD_NTF);
   if (append_to_pdu(&wbuf->buf.pdu, "C", (uint8_t)nrec) < 0)
     goto cleanup;
+#if ANDROID_VERSION >= 21
+  if (append_bt_bdaddr_t(&wbuf->buf.pdu, bd_addr) < 0)
+    goto cleanup;
+#endif
 
   if (run_task(send_ntf_pdu, wbuf) < 0)
     goto cleanup;
@@ -278,12 +342,26 @@ cleanup:
   cleanup_pdu_wbuf(wbuf);
 }
 
+#if ANDROID_VERSION >= 21
 static void
+wbs_cb(bthf_wbs_config_t wbs ATTRIBS(UNUSED),
+       bt_bdaddr_t* bd_addr ATTRIBS(UNUSED))
+{
+  /* TODO: Support HFP 1.6 WBS */
+}
+#endif
+
+static void
+#if ANDROID_VERSION >= 21
+chld_cmd_cb(bthf_chld_type_t chld, bt_bdaddr_t* bd_addr)
+#else
 chld_cmd_cb(bthf_chld_type_t chld)
+#endif
 {
   struct pdu_wbuf* wbuf;
 
-  wbuf = create_pdu_wbuf(1, /* CHLD type */
+  wbuf = create_pdu_wbuf(1 + /* CHLD type */
+                         6, /* address */
                          0, NULL);
   if (!wbuf)
     return;
@@ -291,6 +369,10 @@ chld_cmd_cb(bthf_chld_type_t chld)
   init_pdu(&wbuf->buf.pdu, SERVICE_BT_HF, OPCODE_CHLD_CMD_NTF);
   if (append_to_pdu(&wbuf->buf.pdu, "C", (uint8_t)chld) < 0)
     goto cleanup;
+#if ANDROID_VERSION >= 21
+  if (append_bt_bdaddr_t(&wbuf->buf.pdu, bd_addr) < 0)
+    goto cleanup;
+#endif
 
   if (run_task(send_ntf_pdu, wbuf) < 0)
     goto cleanup;
@@ -301,15 +383,24 @@ cleanup:
 }
 
 static void
+#if ANDROID_VERSION >= 21
+cnum_cmd_cb(bt_bdaddr_t* bd_addr)
+#else
 cnum_cmd_cb(void)
+#endif
 {
   struct pdu_wbuf* wbuf;
 
-  wbuf = create_pdu_wbuf(0, 0, NULL);
+  wbuf = create_pdu_wbuf(6, /* address */
+                         0, NULL);
   if (!wbuf)
     return;
 
   init_pdu(&wbuf->buf.pdu, SERVICE_BT_HF, OPCODE_CNUM_CMD_NTF);
+#if ANDROID_VERSION >= 21
+  if (append_bt_bdaddr_t(&wbuf->buf.pdu, bd_addr) < 0)
+    goto cleanup;
+#endif
 
   if (run_task(send_ntf_pdu, wbuf) < 0)
     goto cleanup;
@@ -320,15 +411,24 @@ cleanup:
 }
 
 static void
+#if ANDROID_VERSION >= 21
+cind_cmd_cb(bt_bdaddr_t* bd_addr)
+#else
 cind_cmd_cb(void)
+#endif
 {
   struct pdu_wbuf* wbuf;
 
-  wbuf = create_pdu_wbuf(0, 0, NULL);
+  wbuf = create_pdu_wbuf(6, /* address */
+                         0, NULL);
   if (!wbuf)
     return;
 
   init_pdu(&wbuf->buf.pdu, SERVICE_BT_HF, OPCODE_CIND_CMD_NTF);
+#if ANDROID_VERSION >= 21
+  if (append_bt_bdaddr_t(&wbuf->buf.pdu, bd_addr) < 0)
+    goto cleanup;
+#endif
 
   if (run_task(send_ntf_pdu, wbuf) < 0)
     goto cleanup;
@@ -339,15 +439,24 @@ cleanup:
 }
 
 static void
+#if ANDROID_VERSION >= 21
+cops_cmd_cb(bt_bdaddr_t* bd_addr)
+#else
 cops_cmd_cb(void)
+#endif
 {
   struct pdu_wbuf* wbuf;
 
-  wbuf = create_pdu_wbuf(0, 0, NULL);
+  wbuf = create_pdu_wbuf(6, /* address */
+                         0, NULL);
   if (!wbuf)
     return;
 
   init_pdu(&wbuf->buf.pdu, SERVICE_BT_HF, OPCODE_COPS_CMD_NTF);
+#if ANDROID_VERSION >= 21
+  if (append_bt_bdaddr_t(&wbuf->buf.pdu, bd_addr) < 0)
+    goto cleanup;
+#endif
 
   if (run_task(send_ntf_pdu, wbuf) < 0)
     goto cleanup;
@@ -358,15 +467,24 @@ cleanup:
 }
 
 static void
+#if ANDROID_VERSION >= 21
+clcc_cmd_cb(bt_bdaddr_t* bd_addr)
+#else
 clcc_cmd_cb(void)
+#endif
 {
   struct pdu_wbuf* wbuf;
 
-  wbuf = create_pdu_wbuf(0, 0, NULL);
+  wbuf = create_pdu_wbuf(6, /* address */
+                         0, NULL);
   if (!wbuf)
     return;
 
   init_pdu(&wbuf->buf.pdu, SERVICE_BT_HF, OPCODE_CLCC_CMD_NTF);
+#if ANDROID_VERSION >= 21
+  if (append_bt_bdaddr_t(&wbuf->buf.pdu, bd_addr) < 0)
+    goto cleanup;
+#endif
 
   if (run_task(send_ntf_pdu, wbuf) < 0)
     goto cleanup;
@@ -377,7 +495,11 @@ cleanup:
 }
 
 static void
+#if ANDROID_VERSION >= 21
+unknown_at_cmd_cb(char* at_string, bt_bdaddr_t* bd_addr)
+#else
 unknown_at_cmd_cb(char* at_string)
+#endif
 {
   struct pdu_wbuf* wbuf;
   size_t len;
@@ -386,12 +508,17 @@ unknown_at_cmd_cb(char* at_string)
 
   len = strlen(at_string) + 1;
 
-  wbuf = create_pdu_wbuf(len, /* AT string */
+  wbuf = create_pdu_wbuf(6 + /* address */
+                         len, /* AT string */
                          0, NULL);
   if (!wbuf)
     return;
 
   init_pdu(&wbuf->buf.pdu, SERVICE_BT_HF, OPCODE_UNKNOWN_AT_CMD_NTF);
+#if ANDROID_VERSION >= 21
+  if (append_bt_bdaddr_t(&wbuf->buf.pdu, bd_addr) < 0)
+    goto cleanup;
+#endif
   if (append_to_pdu(&wbuf->buf.pdu, "m", at_string, len) < 0)
     goto cleanup;
 
@@ -404,15 +531,24 @@ cleanup:
 }
 
 static void
+#if ANDROID_VERSION >= 21
+key_pressed_cmd_cb(bt_bdaddr_t* bd_addr)
+#else
 key_pressed_cmd_cb(void)
+#endif
 {
   struct pdu_wbuf* wbuf;
 
-  wbuf = create_pdu_wbuf(0, 0, NULL);
+  wbuf = create_pdu_wbuf(6, /* address */
+                         0, NULL);
   if (!wbuf)
     return;
 
   init_pdu(&wbuf->buf.pdu, SERVICE_BT_HF, OPCODE_KEY_PRESSED_CMD_NTF);
+#if ANDROID_VERSION >= 21
+  if (append_bt_bdaddr_t(&wbuf->buf.pdu, bd_addr) < 0)
+    goto cleanup;
+#endif
 
   if (run_task(send_ntf_pdu, wbuf) < 0)
     goto cleanup;
@@ -539,12 +675,18 @@ opcode_start_voice_recognition(const struct pdu* cmd)
 {
   struct pdu_wbuf* wbuf;
   bt_status_t status;
+  bt_bdaddr_t bd_addr = { {0, 0, 0, 0, 0, 0} };
+
+#if ANDROID_VERSION >= 21
+  if (read_bt_bdaddr_t(cmd, 0, &bd_addr) < 0)
+    return BT_STATUS_PARM_INVALID;
+#endif
 
   wbuf = create_pdu_wbuf(0, 0, NULL);
   if (!wbuf)
     return BT_STATUS_NOMEM;
 
-  status = bt_hf_start_voice_recognition();
+  status = bt_hf_start_voice_recognition(&bd_addr);
   if (status != BT_STATUS_SUCCESS)
     goto err_bt_hf_start_voice_recognition;
 
@@ -562,12 +704,18 @@ opcode_stop_voice_recognition(const struct pdu* cmd)
 {
   struct pdu_wbuf* wbuf;
   bt_status_t status;
+  bt_bdaddr_t bd_addr = { {0, 0, 0, 0, 0, 0} };
+
+#if ANDROID_VERSION >= 21
+  if (read_bt_bdaddr_t(cmd, 0, &bd_addr) < 0)
+    return BT_STATUS_PARM_INVALID;
+#endif
 
   wbuf = create_pdu_wbuf(0, 0, NULL);
   if (!wbuf)
     return BT_STATUS_NOMEM;
 
-  status = bt_hf_stop_voice_recognition();
+  status = bt_hf_stop_voice_recognition(&bd_addr);
   if (status != BT_STATUS_SUCCESS)
     goto err_bt_hf_stop_voice_recognition;
 
@@ -583,18 +731,26 @@ err_bt_hf_stop_voice_recognition:
 static bt_status_t
 opcode_volume_control(const struct pdu* cmd)
 {
+  long off;
   uint8_t type, volume;
   struct pdu_wbuf* wbuf;
   bt_status_t status;
+  bt_bdaddr_t bd_addr = { {0, 0, 0, 0, 0, 0} };
 
-  if (read_pdu_at(cmd, 0, "CC", &type, &volume) < 0)
+  off = read_pdu_at(cmd, 0, "CC", &type, &volume);
+  if (off < 0)
     return BT_STATUS_PARM_INVALID;
+
+#if ANDROID_VERSION >= 21
+  if (read_bt_bdaddr_t(cmd, off, &bd_addr) < 0)
+    return BT_STATUS_PARM_INVALID;
+#endif
 
   wbuf = create_pdu_wbuf(0, 0, NULL);
   if (!wbuf)
     return BT_STATUS_NOMEM;
 
-  status = bt_hf_volume_control(type, volume);
+  status = bt_hf_volume_control(type, volume, &bd_addr);
   if (status != BT_STATUS_SUCCESS)
     goto err_bt_hf_volume_control;
 
@@ -637,16 +793,26 @@ err_bt_hf_device_status_notification:
 static bt_status_t
 opcode_cops_response(const struct pdu* cmd)
 {
+  long off;
   void* rsp;
   bt_status_t status;
   struct pdu_wbuf* wbuf;
+  bt_bdaddr_t bd_addr = { {0, 0, 0, 0, 0, 0} };
 
   cmd = NULL;
 
-  if (read_pdu_at(cmd, 0, "0", &rsp) < 0) {
+  off = read_pdu_at(cmd, 0, "0", &rsp);
+  if (off < 0) {
     status = BT_STATUS_PARM_INVALID;
     goto err_read_pdu_at;
   }
+
+#if ANDROID_VERSION >= 21
+  if (read_bt_bdaddr_t(cmd, off, &bd_addr) < 0) {
+    status = BT_STATUS_PARM_INVALID;
+    goto err_read_bt_bdaddr_t;
+  }
+#endif
 
   wbuf = create_pdu_wbuf(0, 0, NULL);
   if (!wbuf) {
@@ -654,7 +820,7 @@ opcode_cops_response(const struct pdu* cmd)
     goto err_create_pdu_wbuf;
   }
 
-  status = bt_hf_cops_response(rsp);
+  status = bt_hf_cops_response(rsp, &bd_addr);
   if (status != BT_STATUS_SUCCESS)
     goto err_bt_hf_cops_response;
 
@@ -667,6 +833,9 @@ opcode_cops_response(const struct pdu* cmd)
 err_bt_hf_cops_response:
   cleanup_pdu_wbuf(wbuf);
 err_create_pdu_wbuf:
+#if ANDROID_VERSION >= 21
+err_read_bt_bdaddr_t:
+#endif
 err_read_pdu_at:
   free(rsp);
   return status;
@@ -675,20 +844,28 @@ err_read_pdu_at:
 static bt_status_t
 opcode_cind_response(const struct pdu* cmd)
 {
+  long off;
   uint8_t service, nactive, nheld, state, signal, roaming, level;
   struct pdu_wbuf* wbuf;
   bt_status_t status;
+  bt_bdaddr_t bd_addr = { {0, 0, 0, 0, 0, 0} };
 
-  if (read_pdu_at(cmd, 0, "CCCCCCC", &service, &nactive, &nheld, &state,
-                                     &signal, &roaming, &level) < 0)
+  off = read_pdu_at(cmd, 0, "CCCCCCC", &service, &nactive, &nheld, &state,
+                                       &signal, &roaming, &level);
+  if (off < 0)
     return BT_STATUS_PARM_INVALID;
+
+#if ANDROID_VERSION >= 21
+  if (read_bt_bdaddr_t(cmd, off, &bd_addr) < 0)
+    return BT_STATUS_PARM_INVALID;
+#endif
 
   wbuf = create_pdu_wbuf(0, 0, NULL);
   if (!wbuf)
     return BT_STATUS_NOMEM;
 
   status = bt_hf_cind_response(service, nactive, nheld, state,
-                               signal, roaming, level);
+                               signal, roaming, level, &bd_addr);
   if (status != BT_STATUS_SUCCESS)
     goto err_bt_hf_device_status_notification;
 
@@ -704,16 +881,26 @@ err_bt_hf_device_status_notification:
 static bt_status_t
 opcode_formatted_at_response(const struct pdu* cmd)
 {
+  long off;
   void* rsp;
   bt_status_t status;
   struct pdu_wbuf* wbuf;
+  bt_bdaddr_t bd_addr = { {0, 0, 0, 0, 0, 0} };
 
   rsp = NULL;
 
-  if (read_pdu_at(cmd, 0, "0", &rsp) < 0) {
+  off = read_pdu_at(cmd, 0, "0", &rsp);
+  if (off < 0) {
     status = BT_STATUS_PARM_INVALID;
     goto err_read_pdu_at;
   }
+
+#if ANDROID_VERSION >= 21
+  if (read_bt_bdaddr_t(cmd, off, &bd_addr) < 0) {
+    status = BT_STATUS_PARM_INVALID;
+    goto err_read_bt_bdaddr_t;
+  }
+#endif
 
   wbuf = create_pdu_wbuf(0, 0, NULL);
   if (!wbuf) {
@@ -721,7 +908,7 @@ opcode_formatted_at_response(const struct pdu* cmd)
     goto err_create_pdu_wbuf;
   }
 
-  status = bt_hf_formatted_at_response(rsp);
+  status = bt_hf_formatted_at_response(rsp, &bd_addr);
   if (status != BT_STATUS_SUCCESS)
     goto err_bt_hf_formatted_at_response;
 
@@ -734,6 +921,9 @@ opcode_formatted_at_response(const struct pdu* cmd)
 err_bt_hf_formatted_at_response:
   cleanup_pdu_wbuf(wbuf);
 err_create_pdu_wbuf:
+#if ANDROID_VERSION >= 21
+err_read_bt_bdaddr_t:
+#endif
 err_read_pdu_at:
   free(rsp);
   return status;
@@ -742,18 +932,26 @@ err_read_pdu_at:
 static bt_status_t
 opcode_at_response(const struct pdu* cmd)
 {
+  long off;
   uint8_t rsp, error;
   struct pdu_wbuf* wbuf;
   bt_status_t status;
+  bt_bdaddr_t bd_addr = { {0, 0, 0, 0, 0, 0} };
 
-  if (read_pdu_at(cmd, 0, "CC", &rsp, &error) < 0)
+  off = read_pdu_at(cmd, 0, "CC", &rsp, &error);
+  if (off < 0)
     return BT_STATUS_PARM_INVALID;
+
+#if ANDROID_VERSION >= 21
+  if (read_bt_bdaddr_t(cmd, off, &bd_addr) < 0)
+    return BT_STATUS_PARM_INVALID;
+#endif
 
   wbuf = create_pdu_wbuf(0, 0, NULL);
   if (!wbuf)
     return BT_STATUS_NOMEM;
 
-  status = bt_hf_at_response(rsp, error);
+  status = bt_hf_at_response(rsp, error, &bd_addr);
   if (status != BT_STATUS_SUCCESS)
     goto err_bt_hf_at_response;
 
@@ -769,18 +967,28 @@ err_bt_hf_at_response:
 static bt_status_t
 opcode_clcc_response(const struct pdu* cmd)
 {
+  long off;
   uint8_t index, dir, state, mode, mpty, type;
   void* number;
   struct pdu_wbuf* wbuf;
   bt_status_t status;
+  bt_bdaddr_t bd_addr = { {0, 0, 0, 0, 0, 0} };
 
   number = NULL;
 
-  if (read_pdu_at(cmd, 0, "CCCCCC0", &index, &dir, &state, &mode,
-                                     &mpty, &type, &number) < 0) {
+  off = read_pdu_at(cmd, 0, "CCCCCC0", &index, &dir, &state, &mode,
+                                       &mpty, &type, &number);
+  if (off < 0) {
     status = BT_STATUS_PARM_INVALID;
     goto err_read_pdu_at;
   }
+
+#if ANDROID_VERSION >= 21
+  if (read_bt_bdaddr_t(cmd, off, &bd_addr) < 0) {
+    status = BT_STATUS_PARM_INVALID;
+    goto err_read_bt_bdaddr_t;
+  }
+#endif
 
   wbuf = create_pdu_wbuf(0, 0, NULL);
   if (!wbuf) {
@@ -788,7 +996,8 @@ opcode_clcc_response(const struct pdu* cmd)
     goto err_create_pdu_wbuf;
   }
 
-  status = bt_hf_clcc_response(index, dir, state, mode, mpty, number, type);
+  status = bt_hf_clcc_response(index, dir, state, mode, mpty, number, type,
+                               &bd_addr);
   if (status != BT_STATUS_SUCCESS)
     goto err_bt_hf_clcc_response;
 
@@ -801,6 +1010,9 @@ opcode_clcc_response(const struct pdu* cmd)
 err_bt_hf_clcc_response:
   cleanup_pdu_wbuf(wbuf);
 err_create_pdu_wbuf:
+#if ANDROID_VERSION >= 21
+err_read_bt_bdaddr_t:
+#endif
 err_read_pdu_at:
   free(number);
   return status;
@@ -847,6 +1059,50 @@ err_read_pdu_at:
   return status;
 }
 
+#if ANDROID_VERSION >= 21
+static bt_status_t
+opcode_configure_wbs(const struct pdu* cmd)
+{
+  long off;
+  uint8_t config;
+  struct pdu_wbuf* wbuf;
+  bt_status_t status;
+  bt_bdaddr_t bd_addr = { {0, 0, 0, 0, 0, 0} };
+
+  off = read_bt_bdaddr_t(cmd, 0, &bd_addr);
+  if (off < 0) {
+    status = BT_STATUS_PARM_INVALID;
+    goto err_read_bt_bdaddr_t;
+  }
+
+  if (read_pdu_at(cmd, off, "C", &config) < 0) {
+    status = BT_STATUS_PARM_INVALID;
+    goto err_read_pdu_at;
+  }
+
+  wbuf = create_pdu_wbuf(0, 0, NULL);
+  if (!wbuf) {
+    status = BT_STATUS_NOMEM;
+    goto err_create_pdu_wbuf;
+  }
+
+  status = bt_hf_configure_wbs(&bd_addr, config);
+  if (status != BT_STATUS_SUCCESS)
+    goto err_bt_hf_configure_wbs;
+
+  init_pdu(&wbuf->buf.pdu, cmd->service, cmd->opcode);
+  send_pdu(wbuf);
+
+  return BT_STATUS_SUCCESS;
+err_bt_hf_configure_wbs:
+  cleanup_pdu_wbuf(wbuf);
+err_create_pdu_wbuf:
+err_read_pdu_at:
+err_read_bt_bdaddr_t:
+  return status;
+}
+#endif
+
 static bt_status_t
 bt_hf_handler(const struct pdu* cmd)
 {
@@ -864,7 +1120,10 @@ bt_hf_handler(const struct pdu* cmd)
     [OPCODE_FORMATTED_AT_RESPONSE] = opcode_formatted_at_response,
     [OPCODE_AT_RESPONSE] = opcode_at_response,
     [OPCODE_CLCC_RESPONSE] = opcode_clcc_response,
-    [OPCODE_PHONE_STATE_CHANGE] = opcode_phone_state_change
+    [OPCODE_PHONE_STATE_CHANGE] = opcode_phone_state_change,
+#if ANDROID_VERSION >= 21
+    [OPCODE_CONFIGURE_WBS] = opcode_configure_wbs,
+#endif
   };
 
   return handle_pdu_by_opcode(cmd, handler);
@@ -872,6 +1131,7 @@ bt_hf_handler(const struct pdu* cmd)
 
 bt_status_t
 (*register_bt_hf(unsigned char mode ATTRIBS(UNUSED),
+                 unsigned long max_num_clients,
                  void (*send_pdu_cb)(struct pdu_wbuf*)))(const struct pdu*)
 {
   static bthf_callbacks_t bthf_callbacks = {
@@ -885,6 +1145,9 @@ bt_status_t
     .dial_call_cmd_cb = dial_call_cmd_cb,
     .dtmf_cmd_cb = dtmf_cmd_cb,
     .nrec_cmd_cb = nrec_cmd_cb,
+#if ANDROID_VERSION >= 21
+    .wbs_cb = wbs_cb,
+#endif
     .chld_cmd_cb = chld_cmd_cb,
     .cnum_cmd_cb = cnum_cmd_cb,
     .cind_cmd_cb = cind_cmd_cb,
@@ -894,7 +1157,7 @@ bt_status_t
     .key_pressed_cmd_cb = key_pressed_cmd_cb
   };
 
-  if (init_bt_hf(&bthf_callbacks) < 0)
+  if (init_bt_hf(&bthf_callbacks, max_num_clients) < 0)
     return NULL;
 
   send_pdu = send_pdu_cb;
