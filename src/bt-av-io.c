@@ -30,6 +30,7 @@ enum {
   /* notifications */
   OPCODE_CONNECTION_STATE_NTF = 0x81,
   OPCODE_AUDIO_STATE_NTF = 0x82,
+  OPCODE_AUDIO_CONFIGURATION_NTF = 0x83
 };
 
 static void (*send_pdu)(struct pdu_wbuf* wbuf);
@@ -97,6 +98,34 @@ audio_state_cb(btav_audio_state_t state, bt_bdaddr_t* bd_addr)
 cleanup:
   cleanup_pdu_wbuf(wbuf);
 }
+
+#if ANDROID_VERSION >= 21
+static void
+audio_config_cb(bt_bdaddr_t* bd_addr, uint32_t sample_rate,
+                uint8_t channel_count)
+{
+  struct pdu_wbuf* wbuf;
+
+  wbuf = create_pdu_wbuf(6 + /* address */
+                         4 + /* sample rate */
+                         1, /* channel count */
+                         0, NULL);
+  if (!wbuf)
+    return;
+
+  init_pdu(&wbuf->buf.pdu, SERVICE_BT_AV, OPCODE_AUDIO_CONFIGURATION_NTF);
+  if ((append_bt_bdaddr_t(&wbuf->buf.pdu, bd_addr) < 0) ||
+      (append_to_pdu(&wbuf->buf.pdu, "IC", sample_rate, channel_count) < 0))
+    goto cleanup;
+
+  if (run_task(send_ntf_pdu, wbuf) < 0)
+    goto cleanup;
+
+  return;
+cleanup:
+  cleanup_pdu_wbuf(wbuf);
+}
+#endif
 
 /*
  * Commands/Responses
@@ -169,12 +198,16 @@ bt_av_handler(const struct pdu* cmd)
 
 bt_status_t
 (*register_bt_av(unsigned char mode ATTRIBS(UNUSED),
+                 unsigned long max_num_clients ATTRIBS(UNUSED),
                  void (*send_pdu_cb)(struct pdu_wbuf*)))(const struct pdu*)
 {
   static btav_callbacks_t btav_callbacks = {
     .size = sizeof(btav_callbacks),
     .connection_state_cb = connection_state_cb,
-    .audio_state_cb = audio_state_cb
+    .audio_state_cb = audio_state_cb,
+#if ANDROID_VERSION >= 21
+    .audio_config_cb = audio_config_cb
+#endif
   };
 
   if (init_bt_av(&btav_callbacks) < 0)

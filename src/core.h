@@ -22,7 +22,8 @@ struct pdu;
 struct pdu_wbuf;
 
 int
-core_register_module(unsigned char service, unsigned char mode);
+core_register_module(unsigned char service, unsigned char mode,
+                     unsigned long max_num_clients);
 
 int
 core_unregister_module(unsigned char service);

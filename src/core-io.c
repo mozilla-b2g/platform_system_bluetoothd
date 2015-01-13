@@ -20,6 +20,7 @@
 #include "bt-pdubuf.h"
 #include "core.h"
 #include "core-io.h"
+#include "compiler.h"
 
 static void (*send_pdu)(struct pdu_wbuf* wbuf);
 
@@ -35,15 +36,20 @@ register_module(const struct pdu* cmd)
   uint8_t service;
   uint8_t mode;
   struct pdu_wbuf* wbuf;
+  uint32_t max_num_clients = 1;
 
+#if ANDROID_VERSION >= 21
+  if (read_pdu_at(cmd, 0, "CCI", &service, &mode, &max_num_clients) < 0)
+#else
   if (read_pdu_at(cmd, 0, "CC", &service, &mode) < 0)
+#endif
     return BT_STATUS_FAIL;
 
   wbuf = create_pdu_wbuf(0, 0, NULL);
   if (!wbuf)
     return BT_STATUS_FAIL;
 
-  if (core_register_module(service, mode) < 0)
+  if (core_register_module(service, mode, max_num_clients) < 0)
     goto err_core_register_module;
 
   init_pdu(&wbuf->buf.pdu, cmd->service, cmd->opcode);

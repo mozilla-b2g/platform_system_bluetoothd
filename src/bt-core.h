@@ -18,8 +18,13 @@
 
 #include <hardware/bluetooth.h>
 
+#if ANDROID_VERSION >= 21
+int
+init_bt_core(bt_callbacks_t* callbacks, bt_os_callouts_t* callouts);
+#else
 int
 init_bt_core(bt_callbacks_t* callbacks);
+#endif
 
 void
 uninit_bt_core(void);
@@ -70,7 +75,7 @@ int
 bt_core_cancel_discovery(void);
 
 int
-bt_core_create_bond(const bt_bdaddr_t* bd_addr);
+bt_core_create_bond(const bt_bdaddr_t* bd_addr, int transport);
 
 int
 bt_core_remove_bond(const bt_bdaddr_t* bd_addr);
