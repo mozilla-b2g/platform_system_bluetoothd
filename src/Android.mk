@@ -20,7 +20,7 @@ LOCAL_SRC_FILES:= bt-av.c \
                   service.c
 LOCAL_C_INCLUDES := system/libfdio/include
 LOCAL_CFLAGS := -DANDROID_VERSION=$(PLATFORM_SDK_VERSION) -Wall -Werror
-LOCAL_SHARED_LIBRARIES := libfdio libhardware libcutils liblog
+LOCAL_SHARED_LIBRARIES := libfdio libhardware libhardware_legacy libcutils liblog
 LOCAL_MODULE:= bluetoothd
 LOCAL_MODULE_PATH := $(TARGET_OUT_EXECUTABLES)
 LOCAL_MODULE_TAGS := optional
