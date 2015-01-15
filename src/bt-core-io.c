@@ -17,7 +17,10 @@
 #include <assert.h>
 #include <errno.h>
 #include <stdlib.h>
+#include <sys/epoll.h>
+#include <hardware_legacy/power.h>
 #include <fdio/task.h>
+#include <fdio/timer.h>
 #include "compiler.h"
 #include "log.h"
 #include "bt-proto.h"
@@ -465,27 +468,80 @@ energy_info_cb(bt_activity_energy_info *energy_info ATTRIBS(UNUSED))
   /* nothing to do */
 }
 
-static bool
-set_wake_alarm(uint64_t delay_millis ATTRIBS(UNUSED),
-               bool should_wake ATTRIBS(UNUSED),
-               alarm_cb cb ATTRIBS(UNUSED),
-               void *data ATTRIBS(UNUSED))
-{
-  /* FIXME: need to be implemented in later patches */
-  return true;
+struct alarm_state {
+  alarm_cb cb;
+  void* data;
 };
 
-static int
-acquire_wake_lock(const char *lock_name ATTRIBS(UNUSED))
+static enum ioresult
+alarm_event_in(int fd, void* data)
 {
-  /* FIXME: need to be implemented in later patches */
+  uint64_t num_expirations;
+  ssize_t res;
+
+  struct alarm_state* alarm_state = data;
+  assert(alarm_state);
+  if (alarm_state->cb)
+    alarm_state->cb(alarm_state->data);
+
+  remove_timer(fd);
+  free(data);
+  return IO_OK;
+}
+
+static enum ioresult
+alarm_event(int fd, uint32_t events, void* data)
+{
+  enum ioresult res;
+
+  if (events & EPOLLIN) {
+    res = alarm_event_in(fd, data);
+  } else {
+    ALOGW("unsupported event mask: %u", events);
+    res = IO_OK;
+  }
+  return res;
+}
+
+static bool
+set_wake_alarm_cb(uint64_t delay_millis, bool should_wake, alarm_cb cb,
+                  void* data)
+{
+  struct alarm_state* alarm_state;
+  int clockid;
+
+  errno = 0;
+  alarm_state = malloc(sizeof(*alarm_state));
+  if (errno) {
+    ALOGE_ERRNO("malloc");
+    return false;
+  }
+
+  alarm_state->cb = cb;
+  alarm_state->data = data;
+
+  clockid = should_wake ? CLOCK_BOOTTIME_ALARM : CLOCK_BOOTTIME;
+  if (add_timer_to_epoll_loop(clockid, delay_millis, 0, alarm_event,
+                              alarm_state) < 0)
+    goto err_add_timer_to_epoll_loop;
+
+  return true;
+err_add_timer_to_epoll_loop:
+  free(alarm_state);
+  return false;
+}
+
+static int
+acquire_wake_lock_cb(const char* lock_name)
+{
+  acquire_wake_lock(PARTIAL_WAKE_LOCK, lock_name);
   return BT_STATUS_SUCCESS;
 };
 
 static int
-release_wake_lock(const char *lock_name ATTRIBS(UNUSED))
+release_wake_lock_cb(const char* lock_name)
 {
-  /* FIXME: need to be implemented in later patches */
+  release_wake_lock(lock_name);
   return BT_STATUS_SUCCESS;
 };
 #endif
@@ -1136,9 +1192,9 @@ bt_status_t
 #if ANDROID_VERSION >= 21
   static bt_os_callouts_t bt_os_callouts = {
     .size = sizeof(bt_os_callouts),
-    .set_wake_alarm = set_wake_alarm,
-    .acquire_wake_lock = acquire_wake_lock,
-    .release_wake_lock = release_wake_lock
+    .set_wake_alarm = set_wake_alarm_cb,
+    .acquire_wake_lock = acquire_wake_lock_cb,
+    .release_wake_lock = release_wake_lock_cb
   };
 #endif
 
