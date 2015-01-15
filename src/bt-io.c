@@ -23,8 +23,10 @@
 #include <unistd.h>
 #include <cutils/sockets.h>
 #include <fdio/loop.h>
+#include <hardware_legacy/power.h>
 #include "compiler.h"
 #include "log.h"
+#include "wakelock.h"
 #include "bt-proto.h"
 #include "bt-pdubuf.h"
 #include "service.h"
@@ -96,6 +98,8 @@ io_state_in(struct io_state* io_state, int (*handle_pdu)(const struct pdu*))
   assert(io_state);
   assert(handle_pdu);
 
+  acquire_wake_lock(PARTIAL_WAKE_LOCK, WAKE_LOCK_NAME);
+
   memset(&iv, 0, sizeof(iv));
   iv.iov_base = io_state->rbuf->buf.raw;
   iv.iov_len = io_state->rbuf->maxlen;
@@ -107,7 +111,7 @@ io_state_in(struct io_state* io_state, int (*handle_pdu)(const struct pdu*))
   res = TEMP_FAILURE_RETRY(recvmsg(io_state->fd, &msg, 0));
   if (res < 0) {
     ALOGE_ERRNO("recvmsg");
-    return -1;
+    goto err_recvmsg;
   } else if (!res) {
     /* stop watching if peer hung up */
 
@@ -136,9 +140,13 @@ io_state_in(struct io_state* io_state, int (*handle_pdu)(const struct pdu*))
     goto err_pdu;
   }
 
+  release_wake_lock(WAKE_LOCK_NAME);
+
   return 0;
 err_pdu:
 err_add_fd_to_epoll_loop:
+err_recvmsg:
+  release_wake_lock(WAKE_LOCK_NAME);
   return -1;
 }
 
