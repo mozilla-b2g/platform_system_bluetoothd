@@ -20,10 +20,12 @@
 #include <sys/stat.h>
 #include <sys/types.h>
 #include <unistd.h>
+#include <hardware_legacy/power.h>
 #include <fdio/loop.h>
 #include <fdio/task.h>
 #include "compiler.h"
 #include "log.h"
+#include "wakelock.h"
 #include "bt-io.h"
 
 #define ARRAY_LENGTH(_array) \
@@ -110,10 +112,15 @@ init(void* data ATTRIBS(UNUSED))
   if (init_bt_io(options->socket_name) < 0)
     goto err_init_bt_io;
 
+  /* We should have two pending connection request at this point; enough
+   * to wake up the daemon on input. Suspending is OK from now on. */
+  release_wake_lock(WAKE_LOCK_NAME);
+
   return IO_OK;
 err_init_bt_io:
   uninit_task_queue();
 err_init_task_queue:
+  release_wake_lock(WAKE_LOCK_NAME);
   return IO_ABORT;
 }
 
@@ -140,6 +147,9 @@ main(int argc, char* argv[])
     .socket_name = DEFAULT_SOCKET_NAME
   };
 
+  /* Guarantee progress until we opened a connection, or exit. */
+  acquire_wake_lock(PARTIAL_WAKE_LOCK, WAKE_LOCK_NAME);
+
   res = 0;
 
   opterr = 0; /* no default error messages from getopt */
@@ -154,6 +164,9 @@ main(int argc, char* argv[])
     else
       res = -1;
   } while (!res);
+
+  if (res) /* going to exit */
+    release_wake_lock(WAKE_LOCK_NAME);
 
   if (res > 0)
     exit(EXIT_SUCCESS);
