@@ -14,12 +14,16 @@
  * limitations under the License.
  */
 
+#include <fcntl.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <sys/stat.h>
+#include <sys/types.h>
 #include <unistd.h>
 #include <fdio/loop.h>
 #include <fdio/task.h>
 #include "compiler.h"
+#include "log.h"
 #include "bt-io.h"
 
 #define ARRAY_LENGTH(_array) \
@@ -72,6 +76,27 @@ parse_opt_question_mark(int c,
   fprintf(stderr, "Unknown option %c\n", c);
 
   return -1;
+}
+
+static void
+make_daemon(void)
+{
+  /* Create new session; disconnect from controlling terminal */
+  if ((setsid() < 0 && errno != EPERM))
+    ALOGW_ERRNO("setsid");
+
+  /* Clear file creation mask */
+  umask(0);
+
+  /* Change to root dir; allow unmounting previous working directory */
+  if (chdir("/") < 0)
+    ALOGW_ERRNO("chdir");
+
+  /* Normally we would now close all open file descriptors and re-
+   * open the standard file descriptors to 'dev/null'. On Android,
+   * this breaks the logging system, so we leave the file descriptors
+   * open.
+   */
 }
 
 static enum ioresult
@@ -134,6 +159,8 @@ main(int argc, char* argv[])
     exit(EXIT_SUCCESS);
   else if (res < 0)
     exit(EXIT_FAILURE);
+
+  make_daemon();
 
   if (epoll_loop(init, uninit, &options) < 0)
     goto err_epoll_loop;
