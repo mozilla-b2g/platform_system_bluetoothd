@@ -16,6 +16,8 @@
 
 #pragma once
 
+#define LOG_TAG "bluetoothd"
+
 #include <errno.h>
 #include <string.h>
 #include <utils/Log.h>
