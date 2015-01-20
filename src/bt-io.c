@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2014  Mozilla Foundation
+ * Copyright (C) 2014-2015  Mozilla Foundation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -34,8 +34,6 @@
 
 #define ARRAY_LENGTH(_array) \
   ( sizeof(_array) / sizeof((_array)[0]) )
-
-static const char BLUETOOTHD_SOCKET[] = "bluez_hal_socket";
 
 /*
  * Socket I/O
@@ -285,7 +283,7 @@ io_fd_event_hup(int fd ATTRIBS(UNUSED), void* data)
 
   io_state_hup(io_state);
 
-  return IO_POLL;
+  return IO_EXIT; /* exit with success */
 }
 
 static enum ioresult
@@ -377,131 +375,188 @@ io_fd1_event(int fd, uint32_t events, void* data)
  * Listening socket I/O
  */
 
-static enum ioresult
-fd_event_err(int fd, void* data ATTRIBS(UNUSED))
+static int
+connect_socket(const char* socket_name,
+               enum ioresult (*func)(int, uint32_t, void*),
+               void* data)
 {
-  remove_fd_from_epoll_loop(fd);
-  return IO_OK;
+  static const size_t NAME_OFFSET = 1;
+
+  int fd;
+  size_t len, siz;
+  struct sockaddr_un addr;
+  socklen_t socklen;
+  int res;
+
+  assert(socket_name);
+
+  fd = socket(AF_UNIX, SOCK_SEQPACKET, 0);
+  if (fd < 0) {
+    ALOGE_ERRNO("socket");
+    goto err_socket;
+  }
+  if (TEMP_FAILURE_RETRY(fcntl(fd, F_SETFL, O_NONBLOCK)) < 0) {
+    ALOGE_ERRNO("fcntl");
+    goto err_fcntl;
+  }
+
+  len = strlen(socket_name);
+  siz = len + 1; /* include trailing '\0' */
+
+  addr.sun_family = AF_UNIX;
+  assert(NAME_OFFSET + siz <= sizeof(addr.sun_path));
+  memset(addr.sun_path, '\0', NAME_OFFSET); /* abstract socket */
+  memcpy(addr.sun_path + NAME_OFFSET, socket_name, siz);
+
+  socklen = offsetof(struct sockaddr_un, sun_path) + NAME_OFFSET + siz;
+
+  res = TEMP_FAILURE_RETRY(connect(fd,
+                                   (const struct sockaddr*)&addr,
+                                   socklen));
+  if (res < 0) {
+    ALOGE_ERRNO("connect");
+    goto err_connect;
+  }
+
+  if (add_fd_to_epoll_loop(fd, EPOLLOUT|EPOLLERR, func, data) < 0)
+    goto err_add_fd_to_epoll_loop;
+
+  return fd;
+err_add_fd_to_epoll_loop:
+err_connect:
+err_fcntl:
+  if (TEMP_FAILURE_RETRY(close(fd)) < 0)
+    ALOGW_ERRNO("close");
+err_socket:
+  return -1;
+}
+
+static enum ioresult
+fd_event_err(int fd ATTRIBS(UNUSED), void* data ATTRIBS(UNUSED))
+{
+  /* We don't attempt to repair a failed connection request. If an
+   * error occures, we abort the daemon and let Gecko start a new
+   * process.
+   */
+  return IO_ABORT;
 }
 
 /* The first connected socket is for pairs of command/respond PDUs.
  */
 static enum ioresult
-accept_cmd_socket(int fd ATTRIBS(UNUSED), int socket_fd,
-                  void* data ATTRIBS(UNUSED))
+connected_cmd_socket(int fd)
 {
   struct pdu_rbuf* rbuf;
 
+  /* Remove fd from current loop to clear call-back function */
+  remove_fd_from_epoll_loop(fd);
+
+  /* Setup socket state */
+
   rbuf = create_pdu_rbuf(1ul<<16);
   if (!rbuf)
-    goto err_create_pdu_rbuf;
+    return IO_ABORT;
 
-  io_state[0].fd = socket_fd;
-  io_state[0].epoll_events = 0;
+  io_state[0].epoll_events = EPOLLERR | EPOLLIN;
   io_state[0].rbuf = rbuf;
 
   return IO_OK;
-err_create_pdu_rbuf:
-  if (TEMP_FAILURE_RETRY(close(socket_fd)) < 0)
-    ALOGW_ERRNO("close");
-  return IO_ABORT;
-
 }
 
 /* The second connected socket is for notifications.
  */
 static enum ioresult
-accept_ntf_socket(int fd ATTRIBS(UNUSED), int socket_fd,
-                  void* data ATTRIBS(UNUSED))
+connected_ntf_socket(int fd)
 {
-  uint32_t epoll_events;
-  int res;
+  /* Remove fd from current loop to clear call-back function */
+  remove_fd_from_epoll_loop(fd);
 
-  io_state[1].fd = socket_fd;
-  io_state[1].epoll_events = 0;
+  /* Setup socket state; no EPOLLIN or rbuf here */
+  io_state[1].epoll_events = EPOLLERR;
   io_state[1].rbuf = NULL;
+
+  return IO_OK;
+}
+
+static int
+start_main_loop(void)
+{
+  int res;
 
   /* Init Bluedroid core module and I/O */
 
   if (init_core_io(send_pdu) < 0)
-    goto err_init_core_io;
+    return -1;
 
-  /* Start listening on command socket */
+  /* Start polling command socket */
 
-  epoll_events = io_state[0].epoll_events | EPOLLERR|EPOLLIN;
-
-  res = add_fd_to_epoll_loop(io_state[0].fd, epoll_events,
+  res = add_fd_to_epoll_loop(io_state[0].fd, io_state[0].epoll_events,
                              io_fd0_event, io_state + 0);
   if (res < 0) {
     goto err_add_fd_to_epoll_loop_0;
   }
 
-  io_state[0].epoll_events = epoll_events;
+  /* Start polling notification socket */
 
-  /* Start listening on notification socket; no EPOLLIN here */
-
-  epoll_events = io_state[1].epoll_events | EPOLLERR;
-
-  res = add_fd_to_epoll_loop(io_state[1].fd, epoll_events,
+  res = add_fd_to_epoll_loop(io_state[1].fd, io_state[1].epoll_events,
                              io_fd1_event, io_state + 1);
   if (res < 0) {
     goto err_add_fd_to_epoll_loop_1;
   }
 
-  io_state[1].epoll_events = epoll_events;
+  return 0;
 
-  return IO_OK;
 err_add_fd_to_epoll_loop_1:
-  io_state[0].epoll_events &= ~(EPOLLERR|EPOLLIN);
   remove_fd_from_epoll_loop(io_state[0].fd);
 err_add_fd_to_epoll_loop_0:
   uninit_core_io();
-err_init_core_io:
-  if (TEMP_FAILURE_RETRY(close(socket_fd)) < 0)
-    ALOGW_ERRNO("close");
-  return IO_ABORT;
-
+  return -1;
 }
 
 static enum ioresult
-fd_event_in(int fd, void* data)
+fd_event_out(int fd, void* data)
 {
-  static enum ioresult (* const accept_next_socket[])(int, int, void*) = {
-    [0] = accept_cmd_socket,
-    [1] = accept_ntf_socket
+  static enum ioresult (* const connected_socket[])(int) = {
+    [0] = connected_cmd_socket,
+    [1] = connected_ntf_socket
   };
 
-  int socket_fd;
   size_t i;
+  unsigned long* remaining_fds;
+  enum ioresult res;
 
-  socket_fd = TEMP_FAILURE_RETRY(accept(fd, NULL, 0));
-  if (socket_fd < 0) {
-    ALOGE_ERRNO("accept");
-    goto err_accept;
-  }
+  assert(data);
 
-  for (i = 0; i < ARRAY_LENGTH(accept_next_socket); ++i) {
-    if (io_state[i].fd == -1) {
+  for (i = 0; i < ARRAY_LENGTH(connected_socket); ++i) {
+    if (io_state[i].fd == fd) {
       break;
     }
   }
 
-  if (i == ARRAY_LENGTH(accept_next_socket)) {
-    ALOGW("Too many connected sockets");
-    if (TEMP_FAILURE_RETRY(close(socket_fd)) < 0)
-      ALOGW_ERRNO("close");
-    return IO_OK; /* no error, simply ignore connect request */
+  if (i == ARRAY_LENGTH(connected_socket)) {
+    ALOGE("No state for file descriptor %d", fd);
+    return IO_ABORT; /* There should have been a socket in the array. */
   }
 
-  assert(accept_next_socket[i]);
-  return accept_next_socket[i](fd, socket_fd, data);
+  remaining_fds = data;
+  (*remaining_fds)--;
 
-err_accept:
-  return IO_ABORT;
+  assert(connected_socket[i]);
+  res = connected_socket[i](fd);
+  if (res == IO_ABORT) {
+    return IO_ABORT;
+  }
+
+  if (!(*remaining_fds)) {
+    if (start_main_loop() < 0) {
+      return IO_ABORT;
+    }
+  }
+
+  return res;
 }
 
-/* |fd_event| handles the listen file descriptor for incoming
- * connection requests. ERR is always handled.
+/* |fd_event| handles accepted connection requests. ERR is always handled.
  */
 static enum ioresult
 fd_event(int fd, uint32_t events, void* data)
@@ -510,8 +565,8 @@ fd_event(int fd, uint32_t events, void* data)
 
   if (events & EPOLLERR) {
     res = fd_event_err(fd, data);
-  } else if (events & EPOLLIN) {
-    res = fd_event_in(fd, data);
+  } else if (events & EPOLLOUT) {
+    res = fd_event_out(fd, data);
   } else {
     ALOGW("unsupported event mask: %u", events);
     res = IO_OK;
@@ -521,54 +576,60 @@ fd_event(int fd, uint32_t events, void* data)
 }
 
 int
-init_bt_io()
+init_bt_io(const char* socket_name)
 {
-  static const size_t NAME_OFFSET = 1;
-  static const int LISTEN_BACKLOG = 2; /* enough for cmd and ntf connects */
+  static unsigned long remaining_fds = (unsigned long)ARRAY_LENGTH(io_state);
 
-  int fd;
-  struct sockaddr_un addr;
-  socklen_t socklen;
+  int fd, res;
 
-  fd = socket(AF_UNIX, SOCK_SEQPACKET, 0);
-  if (fd < 0) {
-    ALOGE_ERRNO("socket");
-    goto err_android_get_control_socket;
-  }
-  if (TEMP_FAILURE_RETRY(fcntl(fd, F_SETFL, O_NONBLOCK)) < 0) {
-    ALOGE_ERRNO("fcntl");
-    goto err_fcntl;
-  }
+  /* On startup, we open two connections to Gecko. We can do that
+   * in parallel. The first socket is for the command channel, the
+   * second is for notifications.
+   */
 
-  addr.sun_family = AF_UNIX;
-  assert(NAME_OFFSET + sizeof(BLUETOOTHD_SOCKET) <= sizeof(addr.sun_path));
-  memset(addr.sun_path, '\0', NAME_OFFSET); /* abstract socket */
-  memcpy(addr.sun_path + NAME_OFFSET, BLUETOOTHD_SOCKET,
-         sizeof(BLUETOOTHD_SOCKET));
+  fd = connect_socket(socket_name, fd_event, &remaining_fds);
+  if (fd < 0)
+    return -1;
 
-  socklen = offsetof(struct sockaddr_un, sun_path) +
-                     NAME_OFFSET + sizeof(BLUETOOTHD_SOCKET);
+  io_state[0].fd = fd;
+  io_state[0].epoll_events = 0;
+  io_state[0].rbuf = NULL;
 
-  if (bind(fd, (const struct sockaddr*)&addr, socklen) < 0) {
-    ALOGE_ERRNO("bind");
-    goto err_bind;
-  }
+  fd = connect_socket(socket_name, fd_event, &remaining_fds);
+  if (fd < 0)
+    goto err_connect_socket;
 
-  if (listen(fd, LISTEN_BACKLOG) < 0) {
-    ALOGE_ERRNO("listen");
-    goto err_listen;
-  }
-
-  if (add_fd_to_epoll_loop(fd, EPOLLIN|EPOLLERR, fd_event, NULL) < 0)
-    goto err_add_fd_to_epoll_loop;
+  io_state[1].fd = fd;
+  io_state[1].epoll_events = 0;
+  io_state[1].rbuf = NULL;
 
   return 0;
-err_add_fd_to_epoll_loop:
-err_listen:
-err_bind:
-err_fcntl:
-  if (TEMP_FAILURE_RETRY(close(fd)) < 0)
+
+err_connect_socket:
+  res = TEMP_FAILURE_RETRY(close(io_state[0].fd));
+  if (res < 0)
     ALOGW_ERRNO("close");
-err_android_get_control_socket:
   return -1;
+}
+
+void
+uninit_bt_io()
+{
+  uninit_core_io();
+
+  size_t i;
+
+  for (i = 0; i < ARRAY_LENGTH(io_state); ++i) {
+    int res;
+
+    if (io_state[i].fd == -1)
+      continue;
+
+    remove_fd_from_epoll_loop(io_state[i].fd);
+
+    res = TEMP_FAILURE_RETRY(close(io_state[i].fd));
+    if (res < 0) {
+      ALOGW_ERRNO("close");
+    }
+  }
 }
