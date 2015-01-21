@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2014  Mozilla Foundation
+ * Copyright (C) 2015  Mozilla Foundation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,23 +16,4 @@
 
 #pragma once
 
-#define LOG_TAG "bluetoothd"
-
-#include <errno.h>
-#include <string.h>
-#include <utils/Log.h>
-
-#define _ERRNO_STR(_func, _err) \
-  "%s failed: %s", (_func), strerror(_err)
-
-#define ALOGE_ERRNO_NO(_func, _err) \
-  ALOGE(_ERRNO_STR(_func, _err))
-
-#define ALOGE_ERRNO(_func) \
-  ALOGE_ERRNO_NO(_func, errno)
-
-#define ALOGW_ERRNO_NO(_func, _err) \
-  ALOGW(_ERRNO_STR(_func, _err))
-
-#define ALOGW_ERRNO(_func) \
-  ALOGW_ERRNO_NO(_func, errno)
+static const char WAKE_LOCK_NAME[] = "bluetoothd";
