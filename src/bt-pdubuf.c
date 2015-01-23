@@ -101,12 +101,20 @@ cleanup_pdu_wbuf(struct pdu_wbuf* wbuf)
   free(wbuf);
 }
 
+#define CMSGHDR_CONTAINS_FD(_cmsghdr) \
+  ( ((_cmsghdr)->cmsg_level == SOL_SOCKET) && \
+    ((_cmsghdr)->cmsg_type == SCM_RIGHTS) )
+
+#define CMSGHDR_FD(_cmsghdr) \
+  (*((int*)CMSG_DATA(_cmsghdr)))
+
 ssize_t
 send_pdu_wbuf(struct pdu_wbuf* wbuf, int fd, int flags)
 {
   struct iovec iov;
   struct msghdr msg;
   ssize_t res;
+  struct cmsghdr* chdr;
 
   assert(wbuf);
 
@@ -131,6 +139,22 @@ send_pdu_wbuf(struct pdu_wbuf* wbuf, int fd, int flags)
   if (res < 0) {
     ALOGE_ERRNO("sendmsg");
     return -1;
+  }
+
+  /* File-descriptor transfers create a new reference to
+   * the underlying open file description. We cleanup ours
+   * here, so we won't leak resources.
+   */
+
+  chdr = CMSG_FIRSTHDR(&msg);
+
+  for (; chdr; chdr = CMSG_NXTHDR(&msg, chdr)) {
+    if (!CMSGHDR_CONTAINS_FD(chdr)) {
+      continue;
+    }
+    if (TEMP_FAILURE_RETRY(close(CMSGHDR_FD(chdr))) < 0) {
+      ALOGW_ERRNO("close");
+    }
   }
 
   return res;
