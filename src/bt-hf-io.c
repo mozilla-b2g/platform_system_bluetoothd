@@ -254,7 +254,8 @@ dial_call_cmd_cb(char* number)
   struct pdu_wbuf* wbuf;
   size_t len;
 
-  assert(number);
+  if (!number)
+    number = ""; /* Bug 1125719: number is NULL for redials */
 
   len = strlen(number) + 1;
 
