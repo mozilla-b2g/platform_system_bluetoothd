@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2014  Mozilla Foundation
+ * Copyright (C) 2014-2015  Mozilla Foundation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,12 +16,14 @@
 
 #include <assert.h>
 #include <fdio/task.h>
-#include "bt-pdubuf.h"
-#include "bt-proto.h"
-#include "bt-rc.h"
-#include "bt-rc-io.h"
+#include <hardware/bluetooth.h>
+#include <hardware/bt_rc.h>
 #include "compiler.h"
 #include "log.h"
+#include "bt-proto.h"
+#include "bt-pdubuf.h"
+#include "bt-core.h"
+#include "bt-rc-io.h"
 
 #if ANDROID_VERSION >= 18
 enum {
@@ -66,6 +68,7 @@ enum {
 };
 
 static void (*send_pdu)(struct pdu_wbuf* wbuf);
+static const btrc_interface_t* btrc_interface;
 
 static enum ioresult
 send_ntf_pdu(void* data)
@@ -373,6 +376,9 @@ opcode_get_play_status_rsp(const struct pdu* cmd)
   struct pdu_wbuf* wbuf;
   bt_status_t status;
 
+  assert(btrc_interface);
+  assert(btrc_interface->get_play_status_rsp);
+
   if (read_pdu_at(cmd, 0, "CII", &play_status, &duration, &position) < 0)
     return BT_STATUS_PARM_INVALID;
 
@@ -380,15 +386,15 @@ opcode_get_play_status_rsp(const struct pdu* cmd)
   if (!wbuf)
     return BT_STATUS_NOMEM;
 
-  status = bt_rc_get_play_status_rsp(play_status, duration, position);
+  status = btrc_interface->get_play_status_rsp(play_status, duration, position);
   if (status != BT_STATUS_SUCCESS)
-    goto err_bt_av_get_play_status_rsp;
+    goto err_btrc_interface_get_play_status_rsp;
 
   init_pdu(&wbuf->buf.pdu, cmd->service, cmd->opcode);
   send_pdu(wbuf);
 
   return BT_STATUS_SUCCESS;
-err_bt_av_get_play_status_rsp:
+err_btrc_interface_get_play_status_rsp:
   cleanup_pdu_wbuf(wbuf);
   return status;
 }
@@ -402,6 +408,9 @@ opcode_list_player_app_attr_rsp(const struct pdu* cmd)
   struct pdu_wbuf* wbuf;
   bt_status_t status;
 
+  assert(btrc_interface);
+  assert(btrc_interface->list_player_app_attr_rsp);
+
   off = read_pdu_at(cmd, 0, "C", &num_attr);
   if (off < 0)
     return BT_STATUS_PARM_INVALID;
@@ -413,15 +422,15 @@ opcode_list_player_app_attr_rsp(const struct pdu* cmd)
   if (!wbuf)
     return BT_STATUS_NOMEM;
 
-  status = bt_rc_list_player_app_attr_rsp(num_attr, p_attrs);
+  status = btrc_interface->list_player_app_attr_rsp(num_attr, p_attrs);
   if (status != BT_STATUS_SUCCESS)
-    goto err_bt_rc_list_player_app_attr_rsp;
+    goto err_btrc_interface_list_player_app_attr_rsp;
 
   init_pdu(&wbuf->buf.pdu, cmd->service, cmd->opcode);
   send_pdu(wbuf);
 
   return BT_STATUS_SUCCESS;
-err_bt_rc_list_player_app_attr_rsp:
+err_btrc_interface_list_player_app_attr_rsp:
   cleanup_pdu_wbuf(wbuf);
   return status;
 }
@@ -435,6 +444,9 @@ opcode_list_player_app_value_rsp(const struct pdu* cmd)
   struct pdu_wbuf* wbuf;
   bt_status_t status;
 
+  assert(btrc_interface);
+  assert(btrc_interface->list_player_app_value_rsp);
+
   off = read_pdu_at(cmd, 0, "C", &num_attr);
   if (off < 0)
     return BT_STATUS_PARM_INVALID;
@@ -446,15 +458,15 @@ opcode_list_player_app_value_rsp(const struct pdu* cmd)
   if (!wbuf)
     return BT_STATUS_NOMEM;
 
-  status = bt_rc_list_player_app_value_rsp(num_attr, p_vals);
+  status = btrc_interface->list_player_app_value_rsp(num_attr, p_vals);
   if (status != BT_STATUS_SUCCESS)
-    goto err_bt_rc_list_player_app_value_rsp;
+    goto err_btrc_interface_list_player_app_value_rsp;
 
   init_pdu(&wbuf->buf.pdu, cmd->service, cmd->opcode);
   send_pdu(wbuf);
 
   return BT_STATUS_SUCCESS;
-err_bt_rc_list_player_app_value_rsp:
+err_btrc_interface_list_player_app_value_rsp:
   cleanup_pdu_wbuf(wbuf);
   return status;
 }
@@ -466,6 +478,9 @@ opcode_get_player_app_value_rsp(const struct pdu* cmd)
   struct pdu_wbuf* wbuf;
   bt_status_t status;
 
+  assert(btrc_interface);
+  assert(btrc_interface->get_player_app_value_rsp);
+
   if (read_btrc_player_settings_t(cmd, 0, &p_vals) < 0)
     return BT_STATUS_PARM_INVALID;
 
@@ -473,15 +488,15 @@ opcode_get_player_app_value_rsp(const struct pdu* cmd)
   if (!wbuf)
     return BT_STATUS_NOMEM;
 
-  status = bt_rc_get_player_app_value_rsp(&p_vals);
+  status = btrc_interface->get_player_app_value_rsp(&p_vals);
   if (status != BT_STATUS_SUCCESS)
-    goto err_bt_rc_get_player_app_value_rsp;
+    goto err_btrc_interface_get_player_app_value_rsp;
 
   init_pdu(&wbuf->buf.pdu, cmd->service, cmd->opcode);
   send_pdu(wbuf);
 
   return BT_STATUS_SUCCESS;
-err_bt_rc_get_player_app_value_rsp:
+err_btrc_interface_get_player_app_value_rsp:
   cleanup_pdu_wbuf(wbuf);
   return status;
 }
@@ -494,6 +509,9 @@ opcode_get_player_app_attr_text_rsp(const struct pdu* cmd)
   btrc_player_setting_text_t* p_attrs;
   struct pdu_wbuf* wbuf;
   bt_status_t status;
+
+  assert(btrc_interface);
+  assert(btrc_interface->get_player_app_attr_text_rsp);
 
   off = read_pdu_at(cmd, 0, "C", &num_attr);
   if (off < 0)
@@ -518,9 +536,9 @@ opcode_get_player_app_attr_text_rsp(const struct pdu* cmd)
     goto err_create_pdu_wbuf;
   }
 
-  status = bt_rc_get_player_app_attr_text_rsp(num_attr, p_attrs);
+  status = btrc_interface->get_player_app_attr_text_rsp(num_attr, p_attrs);
   if (status != BT_STATUS_SUCCESS)
-    goto err_bt_rc_get_player_app_attr_text_rsp;
+    goto err_btrc_interface_get_player_app_attr_text_rsp;
 
   init_pdu(&wbuf->buf.pdu, cmd->service, cmd->opcode);
   send_pdu(wbuf);
@@ -528,7 +546,7 @@ opcode_get_player_app_attr_text_rsp(const struct pdu* cmd)
   free(p_attrs);
 
   return BT_STATUS_SUCCESS;
-err_bt_rc_get_player_app_attr_text_rsp:
+err_btrc_interface_get_player_app_attr_text_rsp:
   cleanup_pdu_wbuf(wbuf);
 err_create_pdu_wbuf:
 err_read_btrc_player_setting_text_t_array:
@@ -545,6 +563,9 @@ opcode_get_player_app_value_text_rsp(const struct pdu* cmd)
   struct pdu_wbuf* wbuf;
   bt_status_t status;
 
+  assert(btrc_interface);
+  assert(btrc_interface->get_player_app_value_text_rsp);
+
   off = read_pdu_at(cmd, 0, "C", &num_attr);
   if (off < 0)
     return BT_STATUS_PARM_INVALID;
@@ -568,9 +589,9 @@ opcode_get_player_app_value_text_rsp(const struct pdu* cmd)
     goto err_create_pdu_wbuf;
   }
 
-  status = bt_rc_get_player_app_value_text_rsp(num_attr, p_attrs);
+  status = btrc_interface->get_player_app_value_text_rsp(num_attr, p_attrs);
   if (status != BT_STATUS_SUCCESS)
-    goto err_bt_rc_get_player_app_value_text_rsp;
+    goto err_btrc_interface_get_player_app_value_text_rsp;
 
   init_pdu(&wbuf->buf.pdu, cmd->service, cmd->opcode);
   send_pdu(wbuf);
@@ -578,7 +599,7 @@ opcode_get_player_app_value_text_rsp(const struct pdu* cmd)
   free(p_attrs);
 
   return BT_STATUS_SUCCESS;
-err_bt_rc_get_player_app_value_text_rsp:
+err_btrc_interface_get_player_app_value_text_rsp:
   cleanup_pdu_wbuf(wbuf);
 err_create_pdu_wbuf:
 err_read_btrc_player_setting_text_t_array:
@@ -594,6 +615,9 @@ opcode_get_element_attr_rsp(const struct pdu* cmd)
   btrc_element_attr_val_t* p_attrs;
   struct pdu_wbuf* wbuf;
   bt_status_t status;
+
+  assert(btrc_interface);
+  assert(btrc_interface->get_element_attr_rsp);
 
   off = read_pdu_at(cmd, 0, "C", &num_attr);
   if (off < 0)
@@ -618,9 +642,9 @@ opcode_get_element_attr_rsp(const struct pdu* cmd)
     goto err_create_pdu_wbuf;
   }
 
-  status = bt_rc_get_element_attr_rsp(num_attr, p_attrs);
+  status = btrc_interface->get_element_attr_rsp(num_attr, p_attrs);
   if (status != BT_STATUS_SUCCESS)
-    goto err_bt_rc_get_element_attr_rsp;
+    goto err_btrc_interface_get_element_attr_rsp;
 
   init_pdu(&wbuf->buf.pdu, cmd->service, cmd->opcode);
   send_pdu(wbuf);
@@ -628,7 +652,7 @@ opcode_get_element_attr_rsp(const struct pdu* cmd)
   free(p_attrs);
 
   return BT_STATUS_SUCCESS;
-err_bt_rc_get_element_attr_rsp:
+err_btrc_interface_get_element_attr_rsp:
   cleanup_pdu_wbuf(wbuf);
 err_create_pdu_wbuf:
 err_read_btrc_element_attr_val_t_array:
@@ -643,6 +667,9 @@ opcode_set_player_app_value_rsp(const struct pdu* cmd)
   struct pdu_wbuf* wbuf;
   bt_status_t status;
 
+  assert(btrc_interface);
+  assert(btrc_interface->set_player_app_value_rsp);
+
   if (read_pdu_at(cmd, 0, "C", &rsp_status) < 0)
     return BT_STATUS_PARM_INVALID;
 
@@ -650,15 +677,15 @@ opcode_set_player_app_value_rsp(const struct pdu* cmd)
   if (!wbuf)
     return BT_STATUS_NOMEM;
 
-  status = bt_rc_set_player_app_value_rsp(rsp_status);
+  status = btrc_interface->set_player_app_value_rsp(rsp_status);
   if (status != BT_STATUS_SUCCESS)
-    goto err_bt_rc_set_player_app_value_rsp;
+    goto err_btrc_interface_set_player_app_value_rsp;
 
   init_pdu(&wbuf->buf.pdu, cmd->service, cmd->opcode);
   send_pdu(wbuf);
 
   return BT_STATUS_SUCCESS;
-err_bt_rc_set_player_app_value_rsp:
+err_btrc_interface_set_player_app_value_rsp:
   cleanup_pdu_wbuf(wbuf);
   return status;
 }
@@ -672,6 +699,9 @@ opcode_register_notification_rsp(const struct pdu* cmd)
   struct pdu_wbuf* wbuf;
   bt_status_t status;
 
+  assert(btrc_interface);
+  assert(btrc_interface->register_notification_rsp);
+
   off = read_pdu_at(cmd, 0, "CC", &event_id, &type);
   if (off < 0)
     return BT_STATUS_PARM_INVALID;
@@ -684,15 +714,15 @@ opcode_register_notification_rsp(const struct pdu* cmd)
   if (!wbuf)
     return BT_STATUS_NOMEM;
 
-  status = bt_rc_register_notification_rsp(event_id, type, &param);
+  status = btrc_interface->register_notification_rsp(event_id, type, &param);
   if (status != BT_STATUS_SUCCESS)
-    goto err_bt_rc_register_notification_rsp;
+    goto err_btrc_interface_register_notification_rsp;
 
   init_pdu(&wbuf->buf.pdu, cmd->service, cmd->opcode);
   send_pdu(wbuf);
 
   return BT_STATUS_SUCCESS;
-err_bt_rc_register_notification_rsp:
+err_btrc_interface_register_notification_rsp:
   cleanup_pdu_wbuf(wbuf);
   return status;
 }
@@ -712,15 +742,18 @@ opcode_set_volume(const struct pdu* cmd)
   if (!wbuf)
     return BT_STATUS_NOMEM;
 
-  status = bt_rc_set_volume(volume);
+  assert(btrc_interface);
+  assert(btrc_interface->set_volume);
+
+  status = btrc_interface->set_volume(volume);
   if (status != BT_STATUS_SUCCESS)
-    goto err_bt_rc_set_volume;
+    goto err_btrc_interface_set_volume;
 
   init_pdu(&wbuf->buf.pdu, cmd->service, cmd->opcode);
   send_pdu(wbuf);
 
   return BT_STATUS_SUCCESS;
-err_bt_rc_set_volume:
+err_btrc_interface_set_volume:
   cleanup_pdu_wbuf(wbuf);
   return status;
 }
@@ -777,8 +810,25 @@ bt_status_t
 #endif
   };
 
-  if (init_bt_rc(&btrc_callbacks) < 0)
+  bt_status_t status;
+
+  if (btrc_interface) {
+    ALOGE("AVRCP interface already set up");
     return NULL;
+  }
+
+  btrc_interface = bt_core_get_profile_interface(BT_PROFILE_AV_RC_ID);
+  if (!btrc_interface) {
+    ALOGE("bt_core_get_profile_interface(BT_PROFILE_AV_RC_ID) failed");
+    return NULL;
+  }
+
+  assert(btrc_interface->init);
+  status = btrc_interface->init(&btrc_callbacks);
+  if (status != BT_STATUS_SUCCESS) {
+    ALOGE("btrc_interface_t::init failed");
+    return NULL;
+  }
 
   send_pdu = send_pdu_cb;
 
@@ -792,7 +842,11 @@ int
 unregister_bt_rc()
 {
 #if ANDROID_VERSION >= 18
-  uninit_bt_rc();
+  assert(btrc_interface);
+  assert(btrc_interface->cleanup);
+
+  btrc_interface->cleanup();
+  btrc_interface = NULL;
 #endif
 
   return 0;

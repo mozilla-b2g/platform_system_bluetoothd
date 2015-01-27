@@ -8,7 +8,6 @@ LOCAL_SRC_FILES:= bt-av-io.c \
                   bt-hf-io.c \
                   bt-pdubuf.c \
                   bt-proto.c \
-                  bt-rc.c \
                   bt-rc-io.c \
                   bt-sock-io.c \
                   core.c \
