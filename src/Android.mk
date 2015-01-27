@@ -12,7 +12,6 @@ LOCAL_SRC_FILES:= bt-av.c \
                   bt-proto.c \
                   bt-rc.c \
                   bt-rc-io.c \
-                  bt-sock.c \
                   bt-sock-io.c \
                   core.c \
                   core-io.c \
