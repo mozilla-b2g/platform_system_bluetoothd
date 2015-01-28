@@ -22,7 +22,7 @@
 #include "log.h"
 #include "bt-proto.h"
 #include "bt-pdubuf.h"
-#include "bt-core.h"
+#include "bt-core-io.h"
 #include "bt-hf-io.h"
 
 enum {
@@ -1263,9 +1263,9 @@ bt_status_t
     return NULL;
   }
 
-  bthf_interface = bt_core_get_profile_interface(BT_PROFILE_HANDSFREE_ID);
+  bthf_interface = get_profile_interface(BT_PROFILE_HANDSFREE_ID);
   if (!bthf_interface) {
-    ALOGE("bt_core_get_profile_interface(BT_PROFILE_HANDSFREE_ID) failed");
+    ALOGE("get_profile_interface(BT_PROFILE_HANDSFREE_ID) failed");
     return NULL;
   }
 

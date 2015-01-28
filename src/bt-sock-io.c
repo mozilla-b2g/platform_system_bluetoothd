@@ -23,7 +23,7 @@
 #include "log.h"
 #include "bt-proto.h"
 #include "bt-pdubuf.h"
-#include "bt-core.h"
+#include "bt-core-io.h"
 #include "bt-sock-io.h"
 
 enum {
@@ -193,9 +193,9 @@ bt_status_t
     return NULL;
   }
 
-  btsock_interface = bt_core_get_profile_interface(BT_PROFILE_SOCKETS_ID);
+  btsock_interface = get_profile_interface(BT_PROFILE_SOCKETS_ID);
   if (!btsock_interface) {
-    ALOGE("bt_core_get_profile_interface(BT_PROFILE_SOCKETS_ID) failed");
+    ALOGE("get_profile_interface(BT_PROFILE_SOCKETS_ID) failed");
     return NULL;
   }
 

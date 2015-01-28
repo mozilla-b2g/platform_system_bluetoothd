@@ -2,7 +2,6 @@ LOCAL_PATH:= $(call my-dir)
 
 include $(CLEAR_VARS)
 LOCAL_SRC_FILES:= bt-av-io.c \
-                  bt-core.c \
                   bt-core-io.c \
                   bt-io.c \
                   bt-hf-io.c \

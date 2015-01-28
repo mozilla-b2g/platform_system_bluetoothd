@@ -22,7 +22,7 @@
 #include "log.h"
 #include "bt-proto.h"
 #include "bt-pdubuf.h"
-#include "bt-core.h"
+#include "bt-core-io.h"
 #include "bt-rc-io.h"
 
 #if ANDROID_VERSION >= 18
@@ -817,9 +817,9 @@ bt_status_t
     return NULL;
   }
 
-  btrc_interface = bt_core_get_profile_interface(BT_PROFILE_AV_RC_ID);
+  btrc_interface = get_profile_interface(BT_PROFILE_AV_RC_ID);
   if (!btrc_interface) {
-    ALOGE("bt_core_get_profile_interface(BT_PROFILE_AV_RC_ID) failed");
+    ALOGE("get_profile_interface(BT_PROFILE_AV_RC_ID) failed");
     return NULL;
   }
 

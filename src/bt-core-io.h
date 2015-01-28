@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2014  Mozilla Foundation
+ * Copyright (C) 2014-2015  Mozilla Foundation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -25,3 +25,6 @@ bt_status_t
 
 int
 unregister_bt_core(void);
+
+const void*
+get_profile_interface(const char* profile_id);

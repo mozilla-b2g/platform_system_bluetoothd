@@ -22,7 +22,7 @@
 #include "log.h"
 #include "bt-proto.h"
 #include "bt-pdubuf.h"
-#include "bt-core.h"
+#include "bt-core-io.h"
 #include "bt-av-io.h"
 
 enum {
@@ -226,9 +226,9 @@ bt_status_t
     return NULL;
   }
 
-  btav_interface = bt_core_get_profile_interface(BT_PROFILE_ADVANCED_AUDIO_ID);
+  btav_interface = get_profile_interface(BT_PROFILE_ADVANCED_AUDIO_ID);
   if (!btav_interface) {
-    ALOGE("bt_core_get_profile_interface(BT_PROFILE_ADVANCED_AUDIO_ID) failed");
+    ALOGE("get_profile_interface(BT_PROFILE_ADVANCED_AUDIO_ID) failed");
     return NULL;
   }
 
