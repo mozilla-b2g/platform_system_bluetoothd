@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2014  Mozilla Foundation
+ * Copyright (C) 2014-2015  Mozilla Foundation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,12 +15,15 @@
  */
 
 #include <assert.h>
+#include <hardware/bluetooth.h>
+#include <hardware/bt_sock.h>
 #include <string.h>
 #include <sys/socket.h>
 #include "compiler.h"
+#include "log.h"
 #include "bt-proto.h"
 #include "bt-pdubuf.h"
-#include "bt-sock.h"
+#include "bt-core-io.h"
 #include "bt-sock-io.h"
 
 enum {
@@ -34,6 +37,7 @@ enum {
 static const unsigned long ALIGNMENT_PADDING = sizeof(void*);
 
 static void (*send_pdu)(struct pdu_wbuf* wbuf);
+static const btsock_interface_t* btsock_interface;
 
 static uintptr_t
 _ceil_align(uintptr_t ptr, uintptr_t align)
@@ -92,6 +96,9 @@ opcode_listen(const struct pdu* cmd)
   struct ancillary_data* data;
   bt_status_t status;
 
+  assert(btsock_interface);
+  assert(btsock_interface->listen);
+
   if (read_pdu_at(cmd, 0, "CmmSC", &type,
                                    service_name, (size_t)sizeof(service_name),
                                    uuid, (size_t)sizeof(uuid),
@@ -106,8 +113,8 @@ opcode_listen(const struct pdu* cmd)
 
   data = ceil_align(pdu_wbuf_tail(wbuf), ALIGNMENT_PADDING);
 
-  status = bt_sock_listen(type, (char*)service_name, uuid, channel,
-                          &data->sock_fd, flags);
+  status = btsock_interface->listen(type, (char*)service_name, uuid, channel,
+                                    &data->sock_fd, flags);
   if (status != BT_STATUS_SUCCESS)
     goto err_bt_sock_listen;
 
@@ -133,6 +140,9 @@ opcode_connect(const struct pdu* cmd)
   struct ancillary_data* data;
   bt_status_t status;
 
+  assert(btsock_interface);
+  assert(btsock_interface->connect);
+
   off = read_bt_bdaddr_t(cmd, 0, &bd_addr);
   if (off < 0)
     return BT_STATUS_PARM_INVALID;
@@ -148,16 +158,16 @@ opcode_connect(const struct pdu* cmd)
 
   data = ceil_align(pdu_wbuf_tail(wbuf), ALIGNMENT_PADDING);
 
-  status = bt_sock_connect(&bd_addr, type, uuid, channel,
-                           &data->sock_fd, flags);
+  status = btsock_interface->connect(&bd_addr, type, uuid, channel,
+                                     &data->sock_fd, flags);
   if (status != BT_STATUS_SUCCESS)
-    goto err_bt_sock_listen;
+    goto err_bt_sock_connect;
 
   init_pdu(&wbuf->buf.pdu, cmd->service, cmd->opcode);
   send_pdu(wbuf);
 
   return BT_STATUS_SUCCESS;
-err_bt_sock_listen:
+err_bt_sock_connect:
   cleanup_pdu_wbuf(wbuf);
   return status;
 }
@@ -178,8 +188,16 @@ bt_status_t
                    unsigned long max_num_clients ATTRIBS(UNUSED),
                    void (*send_pdu_cb)(struct pdu_wbuf*)))(const struct pdu*)
 {
-  if (init_bt_sock() < 0)
+  if (btsock_interface) {
+    ALOGE("Socket interface already set up");
     return NULL;
+  }
+
+  btsock_interface = get_profile_interface(BT_PROFILE_SOCKETS_ID);
+  if (!btsock_interface) {
+    ALOGE("get_profile_interface(BT_PROFILE_SOCKETS_ID) failed");
+    return NULL;
+  }
 
   send_pdu = send_pdu_cb;
 
@@ -189,6 +207,9 @@ bt_status_t
 int
 unregister_bt_sock()
 {
-  uninit_bt_sock();
+  assert(btsock_interface);
+
+  btsock_interface = NULL;
+
   return 0;
 }

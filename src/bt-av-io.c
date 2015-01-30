@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2014  Mozilla Foundation
+ * Copyright (C) 2014-2015  Mozilla Foundation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,12 +16,14 @@
 
 #include <assert.h>
 #include <fdio/task.h>
-#include "bt-av.h"
-#include "bt-av-io.h"
-#include "bt-pdubuf.h"
-#include "bt-proto.h"
+#include <hardware/bluetooth.h>
+#include <hardware/bt_av.h>
 #include "compiler.h"
 #include "log.h"
+#include "bt-proto.h"
+#include "bt-pdubuf.h"
+#include "bt-core-io.h"
+#include "bt-av-io.h"
 
 enum {
   /* commands/responses */
@@ -34,6 +36,7 @@ enum {
 };
 
 static void (*send_pdu)(struct pdu_wbuf* wbuf);
+static const btav_interface_t* btav_interface;
 
 static enum ioresult
 send_ntf_pdu(void* data)
@@ -138,6 +141,9 @@ opcode_connect(const struct pdu* cmd)
   struct pdu_wbuf* wbuf;
   bt_status_t status;
 
+  assert(btav_interface);
+  assert(btav_interface->connect);
+
   if (read_bt_bdaddr_t(cmd, 0, &bd_addr) < 0)
     return BT_STATUS_PARM_INVALID;
 
@@ -145,15 +151,15 @@ opcode_connect(const struct pdu* cmd)
   if (!wbuf)
     return BT_STATUS_NOMEM;
 
-  status = bt_av_connect(&bd_addr);
+  status = btav_interface->connect(&bd_addr);
   if (status != BT_STATUS_SUCCESS)
-    goto err_bt_av_connect;
+    goto err_btav_interface_connect;
 
   init_pdu(&wbuf->buf.pdu, cmd->service, cmd->opcode);
   send_pdu(wbuf);
 
   return BT_STATUS_SUCCESS;
-err_bt_av_connect:
+err_btav_interface_connect:
   cleanup_pdu_wbuf(wbuf);
   return status;
 }
@@ -165,6 +171,9 @@ opcode_disconnect(const struct pdu* cmd)
   struct pdu_wbuf* wbuf;
   bt_status_t status;
 
+  assert(btav_interface);
+  assert(btav_interface->disconnect);
+
   if (read_bt_bdaddr_t(cmd, 0, &bd_addr) < 0)
     return BT_STATUS_PARM_INVALID;
 
@@ -172,15 +181,15 @@ opcode_disconnect(const struct pdu* cmd)
   if (!wbuf)
     return BT_STATUS_NOMEM;
 
-  status = bt_av_disconnect(&bd_addr);
+  status = btav_interface->disconnect(&bd_addr);
   if (status != BT_STATUS_SUCCESS)
-    goto err_bt_av_connect;
+    goto err_btav_interface_disconnect;
 
   init_pdu(&wbuf->buf.pdu, cmd->service, cmd->opcode);
   send_pdu(wbuf);
 
   return BT_STATUS_SUCCESS;
-err_bt_av_connect:
+err_btav_interface_disconnect:
   cleanup_pdu_wbuf(wbuf);
   return status;
 }
@@ -210,8 +219,25 @@ bt_status_t
 #endif
   };
 
-  if (init_bt_av(&btav_callbacks) < 0)
+  bt_status_t status;
+
+  if (btav_interface) {
+    ALOGE("A2DP interface already set up");
     return NULL;
+  }
+
+  btav_interface = get_profile_interface(BT_PROFILE_ADVANCED_AUDIO_ID);
+  if (!btav_interface) {
+    ALOGE("get_profile_interface(BT_PROFILE_ADVANCED_AUDIO_ID) failed");
+    return NULL;
+  }
+
+  assert(btav_interface->init);
+  status = btav_interface->init(&btav_callbacks);
+  if (status != BT_STATUS_SUCCESS) {
+    ALOGE("btav_interface_t::init failed");
+    return NULL;
+  }
 
   send_pdu = send_pdu_cb;
 
@@ -221,6 +247,11 @@ bt_status_t
 int
 unregister_bt_av()
 {
-  uninit_bt_av();
+  assert(btav_interface);
+  assert(btav_interface->cleanup);
+
+  btav_interface->cleanup();
+  btav_interface = NULL;
+
   return 0;
 }

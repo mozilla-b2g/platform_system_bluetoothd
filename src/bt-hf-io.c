@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2014  Mozilla Foundation
+ * Copyright (C) 2014-2015  Mozilla Foundation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,12 +16,14 @@
 
 #include <assert.h>
 #include <fdio/task.h>
-#include "bt-hf.h"
-#include "bt-hf-io.h"
-#include "bt-pdubuf.h"
-#include "bt-proto.h"
-#include "log.h"
+#include <hardware/bluetooth.h>
+#include <hardware/bt_hf.h>
 #include "compiler.h"
+#include "log.h"
+#include "bt-proto.h"
+#include "bt-pdubuf.h"
+#include "bt-core-io.h"
+#include "bt-hf-io.h"
 
 enum {
   /* commands/responses */
@@ -60,6 +62,7 @@ enum {
 };
 
 static void (*send_pdu)(struct pdu_wbuf* wbuf);
+static const bthf_interface_t* bthf_interface;
 
 static enum ioresult
 send_ntf_pdu(void* data)
@@ -570,6 +573,9 @@ opcode_connect(const struct pdu* cmd)
   struct pdu_wbuf* wbuf;
   bt_status_t status;
 
+  assert(bthf_interface);
+  assert(bthf_interface->connect);
+
   if (read_bt_bdaddr_t(cmd, 0, &bd_addr) < 0)
     return BT_STATUS_PARM_INVALID;
 
@@ -577,15 +583,15 @@ opcode_connect(const struct pdu* cmd)
   if (!wbuf)
     return BT_STATUS_NOMEM;
 
-  status = bt_hf_connect(&bd_addr);
+  status = bthf_interface->connect(&bd_addr);
   if (status != BT_STATUS_SUCCESS)
-    goto err_bt_hf_connect;
+    goto err_bthf_interface_connect;
 
   init_pdu(&wbuf->buf.pdu, cmd->service, cmd->opcode);
   send_pdu(wbuf);
 
   return BT_STATUS_SUCCESS;
-err_bt_hf_connect:
+err_bthf_interface_connect:
   cleanup_pdu_wbuf(wbuf);
   return status;
 }
@@ -597,6 +603,9 @@ opcode_disconnect(const struct pdu* cmd)
   struct pdu_wbuf* wbuf;
   bt_status_t status;
 
+  assert(bthf_interface);
+  assert(bthf_interface->disconnect);
+
   if (read_bt_bdaddr_t(cmd, 0, &bd_addr) < 0)
     return BT_STATUS_PARM_INVALID;
 
@@ -604,15 +613,15 @@ opcode_disconnect(const struct pdu* cmd)
   if (!wbuf)
     return BT_STATUS_NOMEM;
 
-  status = bt_hf_disconnect(&bd_addr);
+  status = bthf_interface->disconnect(&bd_addr);
   if (status != BT_STATUS_SUCCESS)
-    goto err_bt_hf_connect;
+    goto err_bthf_interface_disconnect;
 
   init_pdu(&wbuf->buf.pdu, cmd->service, cmd->opcode);
   send_pdu(wbuf);
 
   return BT_STATUS_SUCCESS;
-err_bt_hf_connect:
+err_bthf_interface_disconnect:
   cleanup_pdu_wbuf(wbuf);
   return status;
 }
@@ -624,6 +633,9 @@ opcode_connect_audio(const struct pdu* cmd)
   struct pdu_wbuf* wbuf;
   bt_status_t status;
 
+  assert(bthf_interface);
+  assert(bthf_interface->connect_audio);
+
   if (read_bt_bdaddr_t(cmd, 0, &bd_addr) < 0)
     return BT_STATUS_PARM_INVALID;
 
@@ -631,15 +643,15 @@ opcode_connect_audio(const struct pdu* cmd)
   if (!wbuf)
     return BT_STATUS_NOMEM;
 
-  status = bt_hf_connect_audio(&bd_addr);
+  status = bthf_interface->connect_audio(&bd_addr);
   if (status != BT_STATUS_SUCCESS)
-    goto err_bt_hf_connect;
+    goto err_bthf_interface_connect_audio;
 
   init_pdu(&wbuf->buf.pdu, cmd->service, cmd->opcode);
   send_pdu(wbuf);
 
   return BT_STATUS_SUCCESS;
-err_bt_hf_connect:
+err_bthf_interface_connect_audio:
   cleanup_pdu_wbuf(wbuf);
   return status;
 }
@@ -651,6 +663,9 @@ opcode_disconnect_audio(const struct pdu* cmd)
   struct pdu_wbuf* wbuf;
   bt_status_t status;
 
+  assert(bthf_interface);
+  assert(bthf_interface->disconnect_audio);
+
   if (read_bt_bdaddr_t(cmd, 0, &bd_addr) < 0)
     return BT_STATUS_PARM_INVALID;
 
@@ -658,15 +673,15 @@ opcode_disconnect_audio(const struct pdu* cmd)
   if (!wbuf)
     return BT_STATUS_NOMEM;
 
-  status = bt_hf_disconnect_audio(&bd_addr);
+  status = bthf_interface->disconnect_audio(&bd_addr);
   if (status != BT_STATUS_SUCCESS)
-    goto err_bt_hf_connect;
+    goto err_bthf_interface_disconnect_audio;
 
   init_pdu(&wbuf->buf.pdu, cmd->service, cmd->opcode);
   send_pdu(wbuf);
 
   return BT_STATUS_SUCCESS;
-err_bt_hf_connect:
+err_bthf_interface_disconnect_audio:
   cleanup_pdu_wbuf(wbuf);
   return status;
 }
@@ -676,7 +691,12 @@ opcode_start_voice_recognition(const struct pdu* cmd)
 {
   struct pdu_wbuf* wbuf;
   bt_status_t status;
-  bt_bdaddr_t bd_addr = { {0, 0, 0, 0, 0, 0} };
+#if ANDROID_VERSION >= 21
+  bt_bdaddr_t bd_addr;
+#endif
+
+  assert(bthf_interface);
+  assert(bthf_interface->start_voice_recognition);
 
 #if ANDROID_VERSION >= 21
   if (read_bt_bdaddr_t(cmd, 0, &bd_addr) < 0)
@@ -687,15 +707,19 @@ opcode_start_voice_recognition(const struct pdu* cmd)
   if (!wbuf)
     return BT_STATUS_NOMEM;
 
-  status = bt_hf_start_voice_recognition(&bd_addr);
+#if ANDROID_VERSION >= 21
+  status = bthf_interface->start_voice_recognition(&bd_addr);
+#else
+  status = bthf_interface->start_voice_recognition();
+#endif
   if (status != BT_STATUS_SUCCESS)
-    goto err_bt_hf_start_voice_recognition;
+    goto err_bthf_interface_start_voice_recognition;
 
   init_pdu(&wbuf->buf.pdu, cmd->service, cmd->opcode);
   send_pdu(wbuf);
 
   return BT_STATUS_SUCCESS;
-err_bt_hf_start_voice_recognition:
+err_bthf_interface_start_voice_recognition:
   cleanup_pdu_wbuf(wbuf);
   return status;
 }
@@ -705,7 +729,12 @@ opcode_stop_voice_recognition(const struct pdu* cmd)
 {
   struct pdu_wbuf* wbuf;
   bt_status_t status;
-  bt_bdaddr_t bd_addr = { {0, 0, 0, 0, 0, 0} };
+#if ANDROID_VERSION >= 21
+  bt_bdaddr_t bd_addr;
+#endif
+
+  assert(bthf_interface);
+  assert(bthf_interface->stop_voice_recognition);
 
 #if ANDROID_VERSION >= 21
   if (read_bt_bdaddr_t(cmd, 0, &bd_addr) < 0)
@@ -716,15 +745,19 @@ opcode_stop_voice_recognition(const struct pdu* cmd)
   if (!wbuf)
     return BT_STATUS_NOMEM;
 
-  status = bt_hf_stop_voice_recognition(&bd_addr);
+#if ANDROID_VERSION >= 21
+  status = bthf_interface->stop_voice_recognition(&bd_addr);
+#else
+  status = bthf_interface->stop_voice_recognition();
+#endif
   if (status != BT_STATUS_SUCCESS)
-    goto err_bt_hf_stop_voice_recognition;
+    goto err_bthf_interface_stop_voice_recognition;
 
   init_pdu(&wbuf->buf.pdu, cmd->service, cmd->opcode);
   send_pdu(wbuf);
 
   return BT_STATUS_SUCCESS;
-err_bt_hf_stop_voice_recognition:
+err_bthf_interface_stop_voice_recognition:
   cleanup_pdu_wbuf(wbuf);
   return status;
 }
@@ -736,7 +769,12 @@ opcode_volume_control(const struct pdu* cmd)
   uint8_t type, volume;
   struct pdu_wbuf* wbuf;
   bt_status_t status;
-  bt_bdaddr_t bd_addr = { {0, 0, 0, 0, 0, 0} };
+#if ANDROID_VERSION >= 21
+  bt_bdaddr_t bd_addr;
+#endif
+
+  assert(bthf_interface);
+  assert(bthf_interface->volume_control);
 
   off = read_pdu_at(cmd, 0, "CC", &type, &volume);
   if (off < 0)
@@ -751,15 +789,19 @@ opcode_volume_control(const struct pdu* cmd)
   if (!wbuf)
     return BT_STATUS_NOMEM;
 
-  status = bt_hf_volume_control(type, volume, &bd_addr);
+#if ANDROID_VERSION >= 21
+  status = bthf_interface->volume_control(type, volume, &bd_addr);
+#else
+  status = bthf_interface->volume_control(type, volume);
+#endif
   if (status != BT_STATUS_SUCCESS)
-    goto err_bt_hf_volume_control;
+    goto err_bthf_interface_volume_control;
 
   init_pdu(&wbuf->buf.pdu, cmd->service, cmd->opcode);
   send_pdu(wbuf);
 
   return BT_STATUS_SUCCESS;
-err_bt_hf_volume_control:
+err_bthf_interface_volume_control:
   cleanup_pdu_wbuf(wbuf);
   return status;
 }
@@ -771,6 +813,9 @@ opcode_device_status_notification(const struct pdu* cmd)
   struct pdu_wbuf* wbuf;
   bt_status_t status;
 
+  assert(bthf_interface);
+  assert(bthf_interface->device_status_notification);
+
   if (read_pdu_at(cmd, 0, "CCCC", &state, &type, &signal, &level) < 0)
     return BT_STATUS_PARM_INVALID;
 
@@ -778,15 +823,16 @@ opcode_device_status_notification(const struct pdu* cmd)
   if (!wbuf)
     return BT_STATUS_NOMEM;
 
-  status = bt_hf_device_status_notification(state, type, signal, level);
+  status = bthf_interface->device_status_notification(state, type, signal,
+                                                      level);
   if (status != BT_STATUS_SUCCESS)
-    goto err_bt_hf_device_status_notification;
+    goto err_bthf_interface_device_status_notification;
 
   init_pdu(&wbuf->buf.pdu, cmd->service, cmd->opcode);
   send_pdu(wbuf);
 
   return BT_STATUS_SUCCESS;
-err_bt_hf_device_status_notification:
+err_bthf_interface_device_status_notification:
   cleanup_pdu_wbuf(wbuf);
   return status;
 }
@@ -798,7 +844,12 @@ opcode_cops_response(const struct pdu* cmd)
   void* rsp;
   bt_status_t status;
   struct pdu_wbuf* wbuf;
-  bt_bdaddr_t bd_addr = { {0, 0, 0, 0, 0, 0} };
+#if ANDROID_VERSION >= 21
+  bt_bdaddr_t bd_addr;
+#endif
+
+  assert(bthf_interface);
+  assert(bthf_interface->cops_response);
 
   cmd = NULL;
 
@@ -821,9 +872,13 @@ opcode_cops_response(const struct pdu* cmd)
     goto err_create_pdu_wbuf;
   }
 
-  status = bt_hf_cops_response(rsp, &bd_addr);
+#if ANDROID_VERSION >= 21
+  status = bthf_interface->cops_response(rsp, &bd_addr);
+#else
+  status = bthf_interface->cops_response(rsp);
+#endif
   if (status != BT_STATUS_SUCCESS)
-    goto err_bt_hf_cops_response;
+    goto err_bthf_interface_cops_response;
 
   init_pdu(&wbuf->buf.pdu, cmd->service, cmd->opcode);
   send_pdu(wbuf);
@@ -831,7 +886,7 @@ opcode_cops_response(const struct pdu* cmd)
   free(rsp);
 
   return BT_STATUS_SUCCESS;
-err_bt_hf_cops_response:
+err_bthf_interface_cops_response:
   cleanup_pdu_wbuf(wbuf);
 err_create_pdu_wbuf:
 #if ANDROID_VERSION >= 21
@@ -849,7 +904,12 @@ opcode_cind_response(const struct pdu* cmd)
   uint8_t service, nactive, nheld, state, signal, roaming, level;
   struct pdu_wbuf* wbuf;
   bt_status_t status;
-  bt_bdaddr_t bd_addr = { {0, 0, 0, 0, 0, 0} };
+#if ANDROID_VERSION >= 21
+  bt_bdaddr_t bd_addr;
+#endif
+
+  assert(bthf_interface);
+  assert(bthf_interface->cind_response);
 
   off = read_pdu_at(cmd, 0, "CCCCCCC", &service, &nactive, &nheld, &state,
                                        &signal, &roaming, &level);
@@ -865,16 +925,21 @@ opcode_cind_response(const struct pdu* cmd)
   if (!wbuf)
     return BT_STATUS_NOMEM;
 
-  status = bt_hf_cind_response(service, nactive, nheld, state,
-                               signal, roaming, level, &bd_addr);
+#if ANDROID_VERSION >= 21
+  status = bthf_interface->cind_response(service, nactive, nheld, state,
+                                         signal, roaming, level, &bd_addr);
+#else
+  status = bthf_interface->cind_response(service, nactive, nheld, state,
+                                         signal, roaming, level);
+#endif
   if (status != BT_STATUS_SUCCESS)
-    goto err_bt_hf_device_status_notification;
+    goto err_bthf_interface_cind_response;
 
   init_pdu(&wbuf->buf.pdu, cmd->service, cmd->opcode);
   send_pdu(wbuf);
 
   return BT_STATUS_SUCCESS;
-err_bt_hf_device_status_notification:
+err_bthf_interface_cind_response:
   cleanup_pdu_wbuf(wbuf);
   return status;
 }
@@ -886,7 +951,12 @@ opcode_formatted_at_response(const struct pdu* cmd)
   void* rsp;
   bt_status_t status;
   struct pdu_wbuf* wbuf;
-  bt_bdaddr_t bd_addr = { {0, 0, 0, 0, 0, 0} };
+#if ANDROID_VERSION >= 21
+  bt_bdaddr_t bd_addr;
+#endif
+
+  assert(bthf_interface);
+  assert(bthf_interface->formatted_at_response);
 
   rsp = NULL;
 
@@ -909,9 +979,13 @@ opcode_formatted_at_response(const struct pdu* cmd)
     goto err_create_pdu_wbuf;
   }
 
-  status = bt_hf_formatted_at_response(rsp, &bd_addr);
+#if ANDROID_VERSION >= 21
+  status = bthf_interface->formatted_at_response(rsp, &bd_addr);
+#else
+  status = bthf_interface->formatted_at_response(rsp);
+#endif
   if (status != BT_STATUS_SUCCESS)
-    goto err_bt_hf_formatted_at_response;
+    goto err_bthf_interface_formatted_at_response;
 
   init_pdu(&wbuf->buf.pdu, cmd->service, cmd->opcode);
   send_pdu(wbuf);
@@ -919,7 +993,7 @@ opcode_formatted_at_response(const struct pdu* cmd)
   free(rsp);
 
   return BT_STATUS_SUCCESS;
-err_bt_hf_formatted_at_response:
+err_bthf_interface_formatted_at_response:
   cleanup_pdu_wbuf(wbuf);
 err_create_pdu_wbuf:
 #if ANDROID_VERSION >= 21
@@ -937,7 +1011,12 @@ opcode_at_response(const struct pdu* cmd)
   uint8_t rsp, error;
   struct pdu_wbuf* wbuf;
   bt_status_t status;
-  bt_bdaddr_t bd_addr = { {0, 0, 0, 0, 0, 0} };
+#if ANDROID_VERSION >= 21
+  bt_bdaddr_t bd_addr;
+#endif
+
+  assert(bthf_interface);
+  assert(bthf_interface->at_response);
 
   off = read_pdu_at(cmd, 0, "CC", &rsp, &error);
   if (off < 0)
@@ -952,15 +1031,19 @@ opcode_at_response(const struct pdu* cmd)
   if (!wbuf)
     return BT_STATUS_NOMEM;
 
-  status = bt_hf_at_response(rsp, error, &bd_addr);
+#if ANDROID_VERSION >= 21
+  status = bthf_interface->at_response(rsp, error, &bd_addr);
+#else
+  status = bthf_interface->at_response(rsp, error);
+#endif
   if (status != BT_STATUS_SUCCESS)
-    goto err_bt_hf_at_response;
+    goto err_bthf_interface_at_response;
 
   init_pdu(&wbuf->buf.pdu, cmd->service, cmd->opcode);
   send_pdu(wbuf);
 
   return BT_STATUS_SUCCESS;
-err_bt_hf_at_response:
+err_bthf_interface_at_response:
   cleanup_pdu_wbuf(wbuf);
   return status;
 }
@@ -973,7 +1056,12 @@ opcode_clcc_response(const struct pdu* cmd)
   void* number;
   struct pdu_wbuf* wbuf;
   bt_status_t status;
-  bt_bdaddr_t bd_addr = { {0, 0, 0, 0, 0, 0} };
+#if ANDROID_VERSION >= 21
+  bt_bdaddr_t bd_addr;
+#endif
+
+  assert(bthf_interface);
+  assert(bthf_interface->clcc_response);
 
   number = NULL;
 
@@ -997,10 +1085,15 @@ opcode_clcc_response(const struct pdu* cmd)
     goto err_create_pdu_wbuf;
   }
 
-  status = bt_hf_clcc_response(index, dir, state, mode, mpty, number, type,
-                               &bd_addr);
+#if ANDROID_VERSION >= 21
+  status = bthf_interface->clcc_response(index, dir, state, mode, mpty,
+                                         number, type, &bd_addr);
+#else
+  status = bthf_interface->clcc_response(index, dir, state, mode, mpty,
+                                         number, type);
+#endif
   if (status != BT_STATUS_SUCCESS)
-    goto err_bt_hf_clcc_response;
+    goto err_bthf_interface_clcc_response;
 
   init_pdu(&wbuf->buf.pdu, cmd->service, cmd->opcode);
   send_pdu(wbuf);
@@ -1008,7 +1101,7 @@ opcode_clcc_response(const struct pdu* cmd)
   free(number);
 
   return BT_STATUS_SUCCESS;
-err_bt_hf_clcc_response:
+err_bthf_interface_clcc_response:
   cleanup_pdu_wbuf(wbuf);
 err_create_pdu_wbuf:
 #if ANDROID_VERSION >= 21
@@ -1027,6 +1120,9 @@ opcode_phone_state_change(const struct pdu* cmd)
   struct pdu_wbuf* wbuf;
   bt_status_t status;
 
+  assert(bthf_interface);
+  assert(bthf_interface->phone_state_change);
+
   number = NULL;
 
   if (read_pdu_at(cmd, 0, "CCCC0", &num_active, &num_held, &call_setup_state,
@@ -1041,10 +1137,10 @@ opcode_phone_state_change(const struct pdu* cmd)
     goto err_create_pdu_wbuf;
   }
 
-  status = bt_hf_phone_state_change(num_active, num_held, call_setup_state,
-                                    number, type);
+  status = bthf_interface->phone_state_change(num_active, num_held,
+                                              call_setup_state, number, type);
   if (status != BT_STATUS_SUCCESS)
-    goto err_bt_hf_phone_state_change;
+    goto err_bthf_interface_phone_state_change;
 
   init_pdu(&wbuf->buf.pdu, cmd->service, cmd->opcode);
   send_pdu(wbuf);
@@ -1052,7 +1148,7 @@ opcode_phone_state_change(const struct pdu* cmd)
   free(number);
 
   return BT_STATUS_SUCCESS;
-err_bt_hf_phone_state_change:
+err_bthf_interface_phone_state_change:
   cleanup_pdu_wbuf(wbuf);
 err_create_pdu_wbuf:
 err_read_pdu_at:
@@ -1068,7 +1164,10 @@ opcode_configure_wbs(const struct pdu* cmd)
   uint8_t config;
   struct pdu_wbuf* wbuf;
   bt_status_t status;
-  bt_bdaddr_t bd_addr = { {0, 0, 0, 0, 0, 0} };
+  bt_bdaddr_t bd_addr;
+
+  assert(bthf_interface);
+  assert(bthf_interface->configure_wbs);
 
   off = read_bt_bdaddr_t(cmd, 0, &bd_addr);
   if (off < 0) {
@@ -1087,15 +1186,15 @@ opcode_configure_wbs(const struct pdu* cmd)
     goto err_create_pdu_wbuf;
   }
 
-  status = bt_hf_configure_wbs(&bd_addr, config);
+  status = bthf_interface->configure_wbs(&bd_addr, config);
   if (status != BT_STATUS_SUCCESS)
-    goto err_bt_hf_configure_wbs;
+    goto err_bthf_interface_configure_wbs;
 
   init_pdu(&wbuf->buf.pdu, cmd->service, cmd->opcode);
   send_pdu(wbuf);
 
   return BT_STATUS_SUCCESS;
-err_bt_hf_configure_wbs:
+err_bthf_interface_configure_wbs:
   cleanup_pdu_wbuf(wbuf);
 err_create_pdu_wbuf:
 err_read_pdu_at:
@@ -1132,7 +1231,7 @@ bt_hf_handler(const struct pdu* cmd)
 
 bt_status_t
 (*register_bt_hf(unsigned char mode ATTRIBS(UNUSED),
-                 unsigned long max_num_clients,
+                 unsigned long max_num_clients ATTRIBS(UNUSED),
                  void (*send_pdu_cb)(struct pdu_wbuf*)))(const struct pdu*)
 {
   static bthf_callbacks_t bthf_callbacks = {
@@ -1158,8 +1257,30 @@ bt_status_t
     .key_pressed_cmd_cb = key_pressed_cmd_cb
   };
 
-  if (init_bt_hf(&bthf_callbacks, max_num_clients) < 0)
+  bt_status_t status;
+
+  if (bthf_interface) {
+    ALOGE("Handsfree interface already set up");
     return NULL;
+  }
+
+  bthf_interface = get_profile_interface(BT_PROFILE_HANDSFREE_ID);
+  if (!bthf_interface) {
+    ALOGE("get_profile_interface(BT_PROFILE_HANDSFREE_ID) failed");
+    return NULL;
+  }
+
+  assert(bthf_interface->init);
+
+#if ANDROID_VERSION >= 21
+  status = bthf_interface->init(&bthf_callbacks, max_num_clients);
+#else
+  status = bthf_interface->init(&bthf_callbacks);
+#endif
+  if (status != BT_STATUS_SUCCESS) {
+    ALOGE("bthf_interface_t::init failed");
+    return NULL;
+  }
 
   send_pdu = send_pdu_cb;
 
@@ -1169,6 +1290,11 @@ bt_status_t
 int
 unregister_bt_hf()
 {
-  uninit_bt_hf();
+  assert(bthf_interface);
+  assert(bthf_interface->cleanup);
+
+  bthf_interface->cleanup();
+  bthf_interface = NULL;
+
   return 0;
 }

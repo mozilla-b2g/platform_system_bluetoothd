@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2014  Mozilla Foundation
+ * Copyright (C) 2014-2015  Mozilla Foundation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,16 +16,16 @@
 
 #include <assert.h>
 #include <errno.h>
-#include <stdlib.h>
-#include <sys/epoll.h>
-#include <hardware_legacy/power.h>
 #include <fdio/task.h>
 #include <fdio/timer.h>
+#include <hardware/bluetooth.h>
+#include <hardware_legacy/power.h>
+#include <stdlib.h>
+#include <sys/epoll.h>
 #include "compiler.h"
 #include "log.h"
 #include "bt-proto.h"
 #include "bt-pdubuf.h"
-#include "bt-core.h"
 #include "bt-core-io.h"
 
 enum {
@@ -49,7 +49,9 @@ enum {
   OPCODE_SSP_REPLY = 0x11,
   OPCODE_DUT_MODE_CONFIGURE = 0x12,
   OPCODE_DUT_MODE_SEND = 0x13,
+#if ANDROID_VERSION >= 18
   OPCODE_LE_TEST_MODE = 0x14,
+#endif
   /* notifications */
   OPCODE_ADAPTER_STATE_CHANGED_NTF = 0x81,
   OPCODE_ADAPTER_PROPERTIES_CHANGED_NTF = 0x82,
@@ -65,6 +67,8 @@ enum {
 };
 
 static void (*send_pdu)(struct pdu_wbuf* wbuf);
+static bluetooth_device_t*   bt_device;
+static const bt_interface_t* bt_interface;
 
 static enum ioresult
 send_ntf_pdu(void* data)
@@ -556,19 +560,22 @@ enable(const struct pdu* cmd)
   struct pdu_wbuf* wbuf;
   int status;
 
+  assert(bt_interface);
+  assert(bt_interface->enable);
+
   wbuf = create_pdu_wbuf(0, 0, NULL);
   if (!wbuf)
     return BT_STATUS_NOMEM;
 
-  status = bt_core_enable();
+  status = bt_interface->enable();
   if (status != BT_STATUS_SUCCESS)
-    goto err_bt_core_enable;
+    goto err_bt_interface_enable;
 
   init_pdu(&wbuf->buf.pdu, cmd->service, cmd->opcode);
   send_pdu(wbuf);
 
   return BT_STATUS_SUCCESS;
-err_bt_core_enable:
+err_bt_interface_enable:
   cleanup_pdu_wbuf(wbuf);
   return status;
 }
@@ -579,19 +586,22 @@ disable(const struct pdu* cmd)
   struct pdu_wbuf* wbuf;
   int status;
 
+  assert(bt_interface);
+  assert(bt_interface->disable);
+
   wbuf = create_pdu_wbuf(0, 0, NULL);
   if (!wbuf)
     return BT_STATUS_NOMEM;
 
-  status = bt_core_disable();
+  status = bt_interface->disable();
   if (status != BT_STATUS_SUCCESS)
-    goto err_bt_core_disable;
+    goto err_bt_interface_disable;
 
   init_pdu(&wbuf->buf.pdu, cmd->service, cmd->opcode);
   send_pdu(wbuf);
 
   return BT_STATUS_SUCCESS;
-err_bt_core_disable:
+err_bt_interface_disable:
   cleanup_pdu_wbuf(wbuf);
   return status;
 }
@@ -602,19 +612,22 @@ get_adapter_properties(const struct pdu* cmd)
   struct pdu_wbuf* wbuf;
   int status;
 
+  assert(bt_interface);
+  assert(bt_interface->get_adapter_properties);
+
   wbuf = create_pdu_wbuf(0, 0, NULL);
   if (!wbuf)
     return BT_STATUS_NOMEM;
 
-  status = bt_core_get_adapter_properties();
+  status = bt_interface->get_adapter_properties();
   if (status != BT_STATUS_SUCCESS)
-    goto err_bt_core_get_adapter_properties;
+    goto err_bt_interface_get_adapter_properties;
 
   init_pdu(&wbuf->buf.pdu, cmd->service, cmd->opcode);
   send_pdu(wbuf);
 
   return BT_STATUS_SUCCESS;
-err_bt_core_get_adapter_properties:
+err_bt_interface_get_adapter_properties:
   cleanup_pdu_wbuf(wbuf);
   return status;
 }
@@ -626,6 +639,9 @@ get_adapter_property(const struct pdu* cmd)
   struct pdu_wbuf* wbuf;
   int status;
 
+  assert(bt_interface);
+  assert(bt_interface->get_adapter_property);
+
   if (read_pdu_at(cmd, 0, "C", &type) < 0)
     return BT_STATUS_PARM_INVALID;
 
@@ -633,15 +649,15 @@ get_adapter_property(const struct pdu* cmd)
   if (!wbuf)
     return BT_STATUS_NOMEM;
 
-  status = bt_core_get_adapter_property(type);
+  status = bt_interface->get_adapter_property(type);
   if (status != BT_STATUS_SUCCESS)
-    goto err_bt_core_get_adapter_property;
+    goto err_bt_interface_get_adapter_property;
 
   init_pdu(&wbuf->buf.pdu, cmd->service, cmd->opcode);
   send_pdu(wbuf);
 
   return BT_STATUS_SUCCESS;
-err_bt_core_get_adapter_property:
+err_bt_interface_get_adapter_property:
   cleanup_pdu_wbuf(wbuf);
   return status;
 }
@@ -653,6 +669,9 @@ set_adapter_property(const struct pdu* cmd)
   int status;
   struct pdu_wbuf* wbuf;
 
+  assert(bt_interface);
+  assert(bt_interface->set_adapter_property);
+
   if (read_bt_property_t(cmd, 0, &property) < 0)
     return BT_STATUS_PARM_INVALID;
 
@@ -662,9 +681,9 @@ set_adapter_property(const struct pdu* cmd)
     goto err_create_pdu_wbuf;
   }
 
-  status = bt_core_set_adapter_property(&property);
+  status = bt_interface->set_adapter_property(&property);
   if (status != BT_STATUS_SUCCESS)
-    goto err_bt_core_get_adapter_properties;
+    goto err_bt_interface_set_adapter_property;
 
   free(property.val);
 
@@ -672,7 +691,7 @@ set_adapter_property(const struct pdu* cmd)
   send_pdu(wbuf);
 
   return BT_STATUS_SUCCESS;
-err_bt_core_get_adapter_properties:
+err_bt_interface_set_adapter_property:
   cleanup_pdu_wbuf(wbuf);
 err_create_pdu_wbuf:
   free(property.val);
@@ -686,6 +705,9 @@ get_remote_device_properties(const struct pdu* cmd)
   struct pdu_wbuf* wbuf;
   int status;
 
+  assert(bt_interface);
+  assert(bt_interface->get_remote_device_properties);
+
   if (read_bt_bdaddr_t(cmd, 0, &remote_addr) < 0)
     return BT_STATUS_PARM_INVALID;
 
@@ -693,15 +715,15 @@ get_remote_device_properties(const struct pdu* cmd)
   if (!wbuf)
     return BT_STATUS_NOMEM;
 
-  status = bt_core_get_remote_device_properties(&remote_addr);
+  status = bt_interface->get_remote_device_properties(&remote_addr);
   if (status != BT_STATUS_SUCCESS)
-    goto err_bt_core_get_remote_device_properties;
+    goto err_bt_interface_get_remote_device_properties;
 
   init_pdu(&wbuf->buf.pdu, cmd->service, cmd->opcode);
   send_pdu(wbuf);
 
   return BT_STATUS_SUCCESS;
-err_bt_core_get_remote_device_properties:
+err_bt_interface_get_remote_device_properties:
   cleanup_pdu_wbuf(wbuf);
   return status;
 }
@@ -715,6 +737,9 @@ get_remote_device_property(const struct pdu* cmd)
   struct pdu_wbuf* wbuf;
   int status;
 
+  assert(bt_interface);
+  assert(bt_interface->get_remote_device_property);
+
   off = read_bt_bdaddr_t(cmd, 0, &remote_addr);
   if (off < 0)
     return BT_STATUS_PARM_INVALID;
@@ -725,15 +750,15 @@ get_remote_device_property(const struct pdu* cmd)
   if (!wbuf)
     return BT_STATUS_NOMEM;
 
-  status = bt_core_get_remote_device_property(&remote_addr, type);
+  status = bt_interface->get_remote_device_property(&remote_addr, type);
   if (status != BT_STATUS_SUCCESS)
-    goto err_bt_core_get_remote_device_property;
+    goto err_bt_interface_get_remote_device_property;
 
   init_pdu(&wbuf->buf.pdu, cmd->service, cmd->opcode);
   send_pdu(wbuf);
 
   return BT_STATUS_SUCCESS;
-err_bt_core_get_remote_device_property:
+err_bt_interface_get_remote_device_property:
   cleanup_pdu_wbuf(wbuf);
   return status;
 }
@@ -747,6 +772,9 @@ set_remote_device_property(const struct pdu* cmd)
   struct pdu_wbuf* wbuf;
   int status;
 
+  assert(bt_interface);
+  assert(bt_interface->set_remote_device_property);
+
   off = read_bt_bdaddr_t(cmd, 0, &remote_addr);
   if (off < 0)
     return BT_STATUS_PARM_INVALID;
@@ -759,9 +787,9 @@ set_remote_device_property(const struct pdu* cmd)
     goto err_create_pdu_wbuf;
   }
 
-  status = bt_core_set_remote_device_property(&remote_addr, &property);
+  status = bt_interface->set_remote_device_property(&remote_addr, &property);
   if (status != BT_STATUS_SUCCESS)
-    goto err_bt_core_set_remote_device_property;
+    goto err_bt_interface_set_remote_device_property;
 
   free(property.val);
 
@@ -769,7 +797,7 @@ set_remote_device_property(const struct pdu* cmd)
   send_pdu(wbuf);
 
   return BT_STATUS_SUCCESS;
-err_bt_core_set_remote_device_property:
+err_bt_interface_set_remote_device_property:
   cleanup_pdu_wbuf(wbuf);
 err_create_pdu_wbuf:
   free(property.val);
@@ -785,6 +813,9 @@ get_remote_service_record(const struct pdu* cmd)
   struct pdu_wbuf* wbuf;
   int status;
 
+  assert(bt_interface);
+  assert(bt_interface->get_remote_service_record);
+
   off = read_bt_bdaddr_t(cmd, 0, &remote_addr);
   if (off < 0)
     return BT_STATUS_PARM_INVALID;
@@ -795,15 +826,15 @@ get_remote_service_record(const struct pdu* cmd)
   if (!wbuf)
     return BT_STATUS_NOMEM;
 
-  status = bt_core_get_remote_service_record(&remote_addr, &uuid);
+  status = bt_interface->get_remote_service_record(&remote_addr, &uuid);
   if (status != BT_STATUS_SUCCESS)
-    goto err_bt_core_get_remote_service_record;
+    goto err_bt_interface_get_remote_service_record;
 
   init_pdu(&wbuf->buf.pdu, cmd->service, cmd->opcode);
   send_pdu(wbuf);
 
   return BT_STATUS_SUCCESS;
-err_bt_core_get_remote_service_record:
+err_bt_interface_get_remote_service_record:
   cleanup_pdu_wbuf(wbuf);
   return status;
 }
@@ -815,6 +846,9 @@ get_remote_services(const struct pdu* cmd)
   struct pdu_wbuf* wbuf;
   int status;
 
+  assert(bt_interface);
+  assert(bt_interface->get_remote_services);
+
   if (read_bt_bdaddr_t(cmd, 0, &remote_addr) < 0)
     return BT_STATUS_PARM_INVALID;
 
@@ -822,15 +856,15 @@ get_remote_services(const struct pdu* cmd)
   if (!wbuf)
     return BT_STATUS_NOMEM;
 
-  status = bt_core_get_remote_services(&remote_addr);
+  status = bt_interface->get_remote_services(&remote_addr);
   if (status != BT_STATUS_SUCCESS)
-    goto err_bt_core_get_remote_services;
+    goto err_bt_interface_get_remote_services;
 
   init_pdu(&wbuf->buf.pdu, cmd->service, cmd->opcode);
   send_pdu(wbuf);
 
   return BT_STATUS_SUCCESS;
-err_bt_core_get_remote_services:
+err_bt_interface_get_remote_services:
   cleanup_pdu_wbuf(wbuf);
   return status;
 }
@@ -841,19 +875,22 @@ start_discovery(const struct pdu* cmd)
   struct pdu_wbuf* wbuf;
   int status;
 
+  assert(bt_interface);
+  assert(bt_interface->start_discovery);
+
   wbuf = create_pdu_wbuf(0, 0, NULL);
   if (!wbuf)
     return BT_STATUS_NOMEM;
 
-  status = bt_core_start_discovery();
+  status = bt_interface->start_discovery();
   if (status != BT_STATUS_SUCCESS)
-    goto err_bt_core_start_discovery;
+    goto err_bt_interface_start_discovery;
 
   init_pdu(&wbuf->buf.pdu, cmd->service, cmd->opcode);
   send_pdu(wbuf);
 
   return BT_STATUS_SUCCESS;
-err_bt_core_start_discovery:
+err_bt_interface_start_discovery:
   cleanup_pdu_wbuf(wbuf);
   return status;
 }
@@ -864,19 +901,22 @@ cancel_discovery(const struct pdu* cmd)
   struct pdu_wbuf* wbuf;
   int status;
 
+  assert(bt_interface);
+  assert(bt_interface->cancel_discovery);
+
   wbuf = create_pdu_wbuf(0, 0, NULL);
   if (!wbuf)
     return BT_STATUS_NOMEM;
 
-  status = bt_core_cancel_discovery();
+  status = bt_interface->cancel_discovery();
   if (status != BT_STATUS_SUCCESS)
-    goto err_bt_core_cancel_discovery;
+    goto err_bt_interface_cancel_discovery;
 
   init_pdu(&wbuf->buf.pdu, cmd->service, cmd->opcode);
   send_pdu(wbuf);
 
   return BT_STATUS_SUCCESS;
-err_bt_core_cancel_discovery:
+err_bt_interface_cancel_discovery:
   cleanup_pdu_wbuf(wbuf);
   return status;
 }
@@ -888,7 +928,12 @@ create_bond(const struct pdu* cmd)
   bt_bdaddr_t bd_addr;
   struct pdu_wbuf* wbuf;
   int status;
-  uint8_t transport = 0; /* TRANSPORT_AUTO */
+#if ANDROID_VERSION >= 21
+  uint8_t transport;
+#endif
+
+  assert(bt_interface);
+  assert(bt_interface->create_bond);
 
   off = read_bt_bdaddr_t(cmd, 0, &bd_addr);
   if (off < 0)
@@ -903,15 +948,19 @@ create_bond(const struct pdu* cmd)
   if (!wbuf)
     return BT_STATUS_NOMEM;
 
-  status = bt_core_create_bond(&bd_addr, transport);
+#if ANDROID_VERSION >= 21
+  status = bt_interface->create_bond(&bd_addr, transport);
+#else
+  status = bt_interface->create_bond(&bd_addr);
+#endif
   if (status != BT_STATUS_SUCCESS)
-    goto err_bt_core_create_bond;
+    goto err_bt_interface_create_bond;
 
   init_pdu(&wbuf->buf.pdu, cmd->service, cmd->opcode);
   send_pdu(wbuf);
 
   return BT_STATUS_SUCCESS;
-err_bt_core_create_bond:
+err_bt_interface_create_bond:
   cleanup_pdu_wbuf(wbuf);
   return status;
 }
@@ -923,6 +972,9 @@ remove_bond(const struct pdu* cmd)
   struct pdu_wbuf* wbuf;
   int status;
 
+  assert(bt_interface);
+  assert(bt_interface->remove_bond);
+
   if (read_bt_bdaddr_t(cmd, 0, &bd_addr) < 0)
     return BT_STATUS_PARM_INVALID;
 
@@ -930,15 +982,15 @@ remove_bond(const struct pdu* cmd)
   if (!wbuf)
     return BT_STATUS_NOMEM;
 
-  status = bt_core_remove_bond(&bd_addr);
+  status = bt_interface->remove_bond(&bd_addr);
   if (status != BT_STATUS_SUCCESS)
-    goto err_bt_core_remove_bond;
+    goto err_bt_interface_remove_bond;
 
   init_pdu(&wbuf->buf.pdu, cmd->service, cmd->opcode);
   send_pdu(wbuf);
 
   return BT_STATUS_SUCCESS;
-err_bt_core_remove_bond:
+err_bt_interface_remove_bond:
   cleanup_pdu_wbuf(wbuf);
   return status;
 }
@@ -950,6 +1002,9 @@ cancel_bond(const struct pdu* cmd)
   struct pdu_wbuf* wbuf;
   int status;
 
+  assert(bt_interface);
+  assert(bt_interface->cancel_bond);
+
   if (read_bt_bdaddr_t(cmd, 0, &bd_addr) < 0)
     return BT_STATUS_PARM_INVALID;
 
@@ -957,15 +1012,15 @@ cancel_bond(const struct pdu* cmd)
   if (!wbuf)
     return BT_STATUS_NOMEM;
 
-  status = bt_core_cancel_bond(&bd_addr);
+  status = bt_interface->cancel_bond(&bd_addr);
   if (status != BT_STATUS_SUCCESS)
-    goto err_bt_core_remove_bond;
+    goto err_bt_interface_cancel_bond;
 
   init_pdu(&wbuf->buf.pdu, cmd->service, cmd->opcode);
   send_pdu(wbuf);
 
   return BT_STATUS_SUCCESS;
-err_bt_core_remove_bond:
+err_bt_interface_cancel_bond:
   cleanup_pdu_wbuf(wbuf);
   return status;
 }
@@ -981,6 +1036,9 @@ pin_reply(const struct pdu* cmd)
   struct pdu_wbuf* wbuf;
   int status;
 
+  assert(bt_interface);
+  assert(bt_interface->pin_reply);
+
   off = read_bt_bdaddr_t(cmd, 0, &bd_addr);
   if (off < 0)
     return BT_STATUS_PARM_INVALID;
@@ -994,15 +1052,15 @@ pin_reply(const struct pdu* cmd)
   if (!wbuf)
     return BT_STATUS_NOMEM;
 
-  status = bt_core_pin_reply(&bd_addr, accept, pin_len, &pin_code);
+  status = bt_interface->pin_reply(&bd_addr, accept, pin_len, &pin_code);
   if (status != BT_STATUS_SUCCESS)
-    goto err_bt_core_pin_reply;
+    goto err_bt_interface_pin_reply;
 
   init_pdu(&wbuf->buf.pdu, cmd->service, cmd->opcode);
   send_pdu(wbuf);
 
   return BT_STATUS_SUCCESS;
-err_bt_core_pin_reply:
+err_bt_interface_pin_reply:
   cleanup_pdu_wbuf(wbuf);
   return status;
 }
@@ -1018,6 +1076,9 @@ ssp_reply(const struct pdu* cmd)
   struct pdu_wbuf* wbuf;
   int status;
 
+  assert(bt_interface);
+  assert(bt_interface->ssp_reply);
+
   off = read_bt_bdaddr_t(cmd, 0, &bd_addr);
   if (off < 0)
     return BT_STATUS_PARM_INVALID;
@@ -1028,15 +1089,15 @@ ssp_reply(const struct pdu* cmd)
   if (!wbuf)
     return BT_STATUS_NOMEM;
 
-  status = bt_core_ssp_reply(&bd_addr, variant, accept, passkey);
+  status = bt_interface->ssp_reply(&bd_addr, variant, accept, passkey);
   if (status != BT_STATUS_SUCCESS)
-    goto err_bt_core_ssp_reply;
+    goto err_bt_interface_ssp_reply;
 
   init_pdu(&wbuf->buf.pdu, cmd->service, cmd->opcode);
   send_pdu(wbuf);
 
   return BT_STATUS_SUCCESS;
-err_bt_core_ssp_reply:
+err_bt_interface_ssp_reply:
   cleanup_pdu_wbuf(wbuf);
   return status;
 }
@@ -1048,6 +1109,9 @@ dut_mode_configure(const struct pdu* cmd)
   struct pdu_wbuf* wbuf;
   int status;
 
+  assert(bt_interface);
+  assert(bt_interface->dut_mode_configure);
+
   if (read_pdu_at(cmd, 0, "C", &enable) < 0)
     return BT_STATUS_PARM_INVALID;
 
@@ -1055,15 +1119,15 @@ dut_mode_configure(const struct pdu* cmd)
   if (!wbuf)
     return BT_STATUS_NOMEM;
 
-  status = bt_core_dut_mode_configure(enable);
+  status = bt_interface->dut_mode_configure(enable);
   if (status != BT_STATUS_SUCCESS)
-    goto err_bt_core_dut_mode_configure;
+    goto err_bt_interface_dut_mode_configure;
 
   init_pdu(&wbuf->buf.pdu, cmd->service, cmd->opcode);
   send_pdu(wbuf);
 
   return BT_STATUS_SUCCESS;
-err_bt_core_dut_mode_configure:
+err_bt_interface_dut_mode_configure:
   cleanup_pdu_wbuf(wbuf);
   return status;
 }
@@ -1078,6 +1142,9 @@ dut_mode_send(const struct pdu* cmd)
   struct pdu_wbuf* wbuf;
   int status;
 
+  assert(bt_interface);
+  assert(bt_interface->dut_mode_send);
+
   off = read_pdu_at(cmd, 0, "SC", &opcode, &len);
   if (off < 0)
     return BT_STATUS_PARM_INVALID;
@@ -1088,19 +1155,20 @@ dut_mode_send(const struct pdu* cmd)
   if (!wbuf)
     return BT_STATUS_NOMEM;
 
-  status = bt_core_dut_mode_send(opcode, buf, len);
+  status = bt_interface->dut_mode_send(opcode, buf, len);
   if (status != BT_STATUS_SUCCESS)
-    goto err_bt_core_dut_mode_send;
+    goto err_bt_interface_dut_mode_send;
 
   init_pdu(&wbuf->buf.pdu, cmd->service, cmd->opcode);
   send_pdu(wbuf);
 
   return BT_STATUS_SUCCESS;
-err_bt_core_dut_mode_send:
+err_bt_interface_dut_mode_send:
   cleanup_pdu_wbuf(wbuf);
   return status;
 }
 
+#if ANDROID_VERSION >= 18
 static bt_status_t
 le_test_mode(const struct pdu* cmd)
 {
@@ -1121,7 +1189,7 @@ le_test_mode(const struct pdu* cmd)
   if (!wbuf)
     return BT_STATUS_NOMEM;
 
-  status = bt_core_le_test_mode(opcode, buf, len);
+  status = bt_interface->le_test_mode(opcode, buf, len);
   if (status != BT_STATUS_SUCCESS)
     goto err_bt_core_le_test_mode;
 
@@ -1133,6 +1201,7 @@ err_bt_core_le_test_mode:
   cleanup_pdu_wbuf(wbuf);
   return status;
 }
+#endif
 
 static bt_status_t
 bt_core_handler(const struct pdu* cmd)
@@ -1156,8 +1225,11 @@ bt_core_handler(const struct pdu* cmd)
     [OPCODE_PIN_REPLY] = pin_reply,
     [OPCODE_SSP_REPLY] = ssp_reply,
     [OPCODE_DUT_MODE_CONFIGURE] = dut_mode_configure,
-    [OPCODE_DUT_MODE_SEND] = dut_mode_send,
+    [OPCODE_DUT_MODE_SEND] = dut_mode_send
+#if ANDROID_VERSION >= 18
+    ,
     [OPCODE_LE_TEST_MODE] = le_test_mode
+#endif
   };
 
   return handle_pdu_by_opcode(cmd, handler);
@@ -1168,6 +1240,9 @@ bt_status_t
                    unsigned long max_num_clients ATTRIBS(UNUSED),
                    void (*send_pdu_cb)(struct pdu_wbuf*)))(const struct pdu*)
 {
+#define container(_t, _v, _m) \
+  ( (_t*)( ((const unsigned char*)(_v)) - offsetof(_t, _m) ) )
+
   static bt_callbacks_t bt_callbacks = {
     .size = sizeof(bt_callbacks),
     .adapter_state_changed_cb = adapter_state_changed_cb,
@@ -1198,23 +1273,101 @@ bt_status_t
   };
 #endif
 
+  int status;
+  int err;
+  hw_module_t* module;
+  hw_device_t* device;
+
   assert(send_pdu_cb);
 
-#if ANDROID_VERSION >= 21
-  if (init_bt_core(&bt_callbacks, &bt_os_callouts) < 0)
-#else
-  if (init_bt_core(&bt_callbacks) < 0)
-#endif
+  if (bt_device) {
+    ALOGE("Bluetooth device already open");
     return NULL;
+  }
+
+  if (bt_interface) {
+    ALOGE("Bluetooth interface already set up");
+    return NULL;
+  }
+
+  err = hw_get_module(BT_HARDWARE_MODULE_ID, (hw_module_t const**)&module);
+  if (err) {
+    ALOGE_ERRNO_NO("hw_get_module", err);
+    return NULL;
+  }
+
+  err = module->methods->open(module, BT_HARDWARE_MODULE_ID, &device);
+  if (err) {
+    ALOGE_ERRNO_NO("hw_module_t::methods::open", err);
+    return NULL;
+  }
+
+  bt_device = container(bluetooth_device_t, device, common);
+
+  bt_interface = bt_device->get_bluetooth_interface();
+  if (!bt_interface) {
+    ALOGE("bt_device_t::get_bluetooth_interface failed");
+    goto err_bt_device_get_bluetooth_interface;
+  }
+
+  status = bt_interface->init(&bt_callbacks);
+  if (status != BT_STATUS_SUCCESS) {
+    ALOGE("bt_interface_t::init failed");
+    goto err_bt_interface_init;
+  }
+
+#if ANDROID_VERSION >= 21
+  status = bt_interface->set_os_callouts(&bt_os_callouts);
+  if (status != BT_STATUS_SUCCESS) {
+    ALOGE("bt_interface_t::set_os_callouts failed");
+    goto err_bt_interface_set_os_callouts;
+  }
+#endif
 
   send_pdu = send_pdu_cb;
 
   return bt_core_handler;
+
+#if ANDROID_VERSION >= 21
+err_bt_interface_set_os_callouts:
+  bt_interface->cleanup();
+#endif
+err_bt_interface_init:
+  bt_interface = NULL;
+err_bt_device_get_bluetooth_interface:
+  bt_device = NULL;
+  err = device->close(device);
+  if (err)
+    ALOGW_ERRNO_NO("hw_device_t::close", err);
+  return NULL;
+
+#undef container
 }
 
 int
 unregister_bt_core()
 {
-  uninit_bt_core();
+  int err;
+
+  assert(bt_interface);
+  assert(bt_device);
+
+  bt_interface->cleanup();
+  bt_interface = NULL;
+
+  err = bt_device->common.close(&bt_device->common);
+  if (err)
+    ALOGW_ERRNO_NO("bt_device_t::common::close", err);
+  bt_device = NULL;
+
   return 0;
+}
+
+const void*
+get_profile_interface(const char* profile_id)
+{
+  assert(bt_interface);
+  assert(bt_interface->get_profile_interface);
+
+  return bt_interface->get_profile_interface(profile_id);
 }
