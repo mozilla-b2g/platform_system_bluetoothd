@@ -17,7 +17,9 @@
 #include <assert.h>
 #include <fdio/task.h>
 #include <hardware/bluetooth.h>
+#if ANDROID_VERSION >= 18
 #include <hardware/bt_rc.h>
+#endif
 #include "compiler.h"
 #include "log.h"
 #include "bt-proto.h"
