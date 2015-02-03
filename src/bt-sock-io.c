@@ -134,7 +134,7 @@ opcode_connect(const struct pdu* cmd)
   bt_bdaddr_t bd_addr;
   uint8_t type;
   uint8_t uuid[16];
-  uint16_t channel;
+  int16_t channel;
   uint8_t flags;
   struct pdu_wbuf* wbuf;
   struct ancillary_data* data;
