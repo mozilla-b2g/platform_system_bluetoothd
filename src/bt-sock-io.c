@@ -86,13 +86,13 @@ opcode_listen(const struct pdu* cmd)
   uint8_t type;
   int8_t service_name[256];
   uint8_t uuid[16];
-  uint16_t channel;
+  int32_t channel;
   uint8_t flags;
   struct pdu_wbuf* wbuf;
   struct ancillary_data* data;
   bt_status_t status;
 
-  if (read_pdu_at(cmd, 0, "CmmSC", &type,
+  if (read_pdu_at(cmd, 0, "CmmiC", &type,
                                    service_name, (size_t)sizeof(service_name),
                                    uuid, (size_t)sizeof(uuid),
                                    &channel, &flags) < 0)
@@ -127,7 +127,7 @@ opcode_connect(const struct pdu* cmd)
   bt_bdaddr_t bd_addr;
   uint8_t type;
   uint8_t uuid[16];
-  uint16_t channel;
+  int32_t channel;
   uint8_t flags;
   struct pdu_wbuf* wbuf;
   struct ancillary_data* data;
@@ -136,7 +136,7 @@ opcode_connect(const struct pdu* cmd)
   off = read_bt_bdaddr_t(cmd, 0, &bd_addr);
   if (off < 0)
     return BT_STATUS_PARM_INVALID;
-  if (read_pdu_at(cmd, off, "CmsC", &type, uuid, sizeof(uuid),
+  if (read_pdu_at(cmd, off, "CmiC", &type, uuid, sizeof(uuid),
                                     &channel, &flags) < 0)
     return BT_STATUS_PARM_INVALID;
 
