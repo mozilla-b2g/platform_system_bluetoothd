@@ -19,6 +19,6 @@
 service bluetoothd /system/bin/bluetoothd
     class main
     user bluetooth
-    group system net_admin net_bt_stack bluetooth
+    group bluetooth net_admin net_bt_stack system
     disabled
     oneshot
