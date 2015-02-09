@@ -22,3 +22,10 @@ service bluetoothd /system/bin/bluetoothd
     group bluetooth net_admin net_bt_stack system
     disabled
     oneshot
+
+service bluetoothd-snoop /system/bin/bluetoothd-snoop
+    class main
+    user bluetooth
+    group bluetooth
+    disabled
+    oneshot
