@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2014  Mozilla Foundation
+ * Copyright (C) 2014-2015  Mozilla Foundation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -119,12 +119,12 @@ read_pdu_at_va(const struct pdu* pdu, unsigned long offset,
         break;
       case '0': /* raw 0-terminated memory */
         mem = va_arg(ap, void**);
-        chr = memchr(mem, '\0', pdu->len - offset);
+        chr = memchr(pdu->data + offset, '\0', pdu->len - offset);
         if (!chr) {
           ALOGE("string not terminated");
           return -1;
         }
-        len = memdiff(mem, chr) + 1; /* include \0 byte */
+        len = memdiff(pdu->data + offset, chr) + 1; /* include \0 byte */
         errno = 0;
         dst = malloc(len);
         if (errno) {
