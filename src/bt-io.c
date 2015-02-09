@@ -32,6 +32,7 @@
 #include "service.h"
 #include "core.h"
 #include "core-io.h"
+#include "bt-core-io.h"
 #include "bt-io.h"
 
 #define ARRAY_LENGTH(_array) \
@@ -232,6 +233,9 @@ static struct io_state io_state[2] = {
   IO_STATE_INITIALIZER(io_state[1], io_fd1_event)
 };
 
+/* listen socket for the snoop daemon; no data transfers supported */
+static int snoop_listen_fd;
+
 static void
 send_pdu(struct pdu_wbuf* wbuf)
 {
@@ -379,9 +383,157 @@ io_fd1_event(int fd, uint32_t events, void* data)
   return res;
 }
 
-/*
- * Listening socket I/O
+/* Snoop socket
  */
+
+static enum ioresult
+io_snoop_listen_event(int fd, uint32_t events, void* data);
+
+static enum ioresult
+io_snoop_event(int fd, uint32_t events ATTRIBS(UNUSED), void* data)
+{
+  int snoop_listen_fd, res;
+
+  /* If there's an event on the snoop fd, the snoop daemon hung up
+   * the connection. We close our socket and add the listen socket
+   * to the I/O loop. HCI snooping is stopped.
+   */
+
+  enable_hci_snooping(0);
+
+  remove_fd_from_epoll_loop(fd);
+
+  if (TEMP_FAILURE_RETRY(close(fd)) < 0)
+    ALOGW_ERRNO("close");
+
+  snoop_listen_fd = (int)((intptr_t)data);
+
+  res = add_fd_to_epoll_loop(snoop_listen_fd, EPOLLIN|EPOLLHUP|EPOLLERR,
+                             io_snoop_listen_event, NULL);
+  if (res < 0) {
+    if (TEMP_FAILURE_RETRY(close(snoop_listen_fd)) < 0)
+      ALOGW_ERRNO("close");
+    snoop_listen_fd = 0;
+  }
+
+  return IO_POLL;
+}
+
+static enum ioresult
+io_snoop_listen_event_in(int fd, void* data ATTRIBS(UNUSED))
+{
+  int snoop_fd, res;
+
+  snoop_fd = TEMP_FAILURE_RETRY(accept(fd, NULL, NULL));
+  if (snoop_fd < 0) {
+    ALOGE_ERRNO("accept");
+    return IO_POLL;
+  }
+
+  res = add_fd_to_epoll_loop(snoop_fd, EPOLLHUP|EPOLLERR,
+                             io_snoop_event, (void*)((intptr_t)fd));
+  if (res < 0)
+    goto err_add_fd_to_epoll_loop;
+
+  if (enable_hci_snooping(1) < 0)
+    goto err_enable_hci_snoop;
+
+  remove_fd_from_epoll_loop(fd);
+
+  return IO_POLL;
+
+err_enable_hci_snoop:
+  remove_fd_from_epoll_loop(snoop_fd);
+err_add_fd_to_epoll_loop:
+  if (TEMP_FAILURE_RETRY(close(snoop_fd)) < 0)
+    ALOGW_ERRNO("close");
+  return IO_POLL;
+}
+
+static enum ioresult
+io_snoop_listen_event(int fd, uint32_t events, void* data)
+{
+  enum ioresult res;
+
+  if ((events & EPOLLERR) || (events & EPOLLHUP)) {
+    remove_fd_from_epoll_loop(fd);
+    if (TEMP_FAILURE_RETRY(close(fd)) < 0)
+      ALOGW_ERRNO("close");
+    snoop_listen_fd = 0;
+    res = IO_POLL;
+  } else if (events & EPOLLIN) {
+    res = io_snoop_listen_event_in(fd, data);
+  } else {
+    ALOGW("unsupported event mask: %u", events);
+    res = IO_OK;
+  }
+  return res;
+}
+
+/*
+ * Socket I/O
+ */
+
+static int
+listen_socket(const char* socket_name,
+              enum ioresult (*func)(int, uint32_t, void*),
+              void* data)
+{
+  static const size_t NAME_OFFSET = 1;
+
+  int fd;
+  size_t len, siz;
+  struct sockaddr_un addr;
+  socklen_t socklen;
+  int res;
+
+  assert(socket_name);
+
+  fd = socket(AF_UNIX, SOCK_SEQPACKET, 0);
+  if (fd < 0) {
+    ALOGE_ERRNO("socket");
+    goto err_socket;
+  }
+  if (TEMP_FAILURE_RETRY(fcntl(fd, F_SETFL, O_NONBLOCK)) < 0) {
+    ALOGE_ERRNO("fcntl");
+    goto err_fcntl;
+  }
+
+  len = strlen(socket_name);
+  siz = len + 1; /* include trailing '\0' */
+
+  addr.sun_family = AF_UNIX;
+  assert(NAME_OFFSET + siz <= sizeof(addr.sun_path));
+  memset(addr.sun_path, '\0', NAME_OFFSET); /* abstract socket */
+  memcpy(addr.sun_path + NAME_OFFSET, socket_name, siz);
+
+  socklen = offsetof(struct sockaddr_un, sun_path) + NAME_OFFSET + siz;
+
+  res = TEMP_FAILURE_RETRY(bind(fd,
+                                (const struct sockaddr*)&addr,
+                                socklen));
+  if (res < 0) {
+    ALOGE_ERRNO("bind");
+    goto err_bind;
+  }
+
+  if (listen(fd, 1) < 0) {
+    ALOGE_ERRNO("listen");
+    goto err_listen;
+  }
+  if (add_fd_to_epoll_loop(fd, EPOLLIN|EPOLLHUP|EPOLLERR, func, data) < 0)
+    goto err_add_fd_to_epoll_loop;
+
+  return fd;
+err_add_fd_to_epoll_loop:
+err_listen:
+err_bind:
+err_fcntl:
+  if (TEMP_FAILURE_RETRY(close(fd)) < 0)
+    ALOGW_ERRNO("close");
+err_socket:
+  return -1;
+}
 
 static int
 connect_socket(const char* socket_name,
@@ -589,6 +741,8 @@ init_bt_io(const char* socket_name)
   static unsigned long remaining_fds = (unsigned long)ARRAY_LENGTH(io_state);
 
   int fd, res;
+  size_t len, siz;
+  char* snoop_socket_name;
 
   /* On startup, we open two connections to Gecko. We can do that
    * in parallel. The first socket is for the command channel, the
@@ -611,8 +765,40 @@ init_bt_io(const char* socket_name)
   io_state[1].epoll_events = 0;
   io_state[1].rbuf = NULL;
 
+  /* And we also create a 'snoop socket.' While there is an open
+   * connetion from this socket, bluetoothd keeps HCI snooping
+   * enabled.
+   */
+
+  len = strlen(socket_name);
+  siz = len + sizeof("-snoop"); /* includes \0 character */
+
+  errno = 0;
+  snoop_socket_name = malloc(siz);
+  if (errno) {
+    ALOGE_ERRNO("malloc");
+    goto err_malloc;
+  }
+
+  memcpy(snoop_socket_name, socket_name, len);
+  memcpy(snoop_socket_name+len, "-snoop", siz-len);
+
+  fd = listen_socket(snoop_socket_name, io_snoop_listen_event, NULL);
+  if (fd < 0)
+    goto err_listen_socket;
+
+  free(snoop_socket_name);
+
+  snoop_listen_fd = fd;
+
   return 0;
 
+err_listen_socket:
+  free(snoop_socket_name);
+err_malloc:
+  res = TEMP_FAILURE_RETRY(close(io_state[1].fd));
+  if (res < 0)
+    ALOGW_ERRNO("close");
 err_connect_socket:
   res = TEMP_FAILURE_RETRY(close(io_state[0].fd));
   if (res < 0)
@@ -623,9 +809,17 @@ err_connect_socket:
 void
 uninit_bt_io()
 {
+  size_t i;
+
   uninit_core_io();
 
-  size_t i;
+  if (snoop_listen_fd) {
+    remove_fd_from_epoll_loop(snoop_listen_fd);
+    if (TEMP_FAILURE_RETRY(close(snoop_listen_fd)) < 0) {
+      ALOGW_ERRNO("close");
+    }
+    snoop_listen_fd = 0;
+  }
 
   for (i = 0; i < ARRAY_LENGTH(io_state); ++i) {
     int res;
