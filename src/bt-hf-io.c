@@ -800,7 +800,7 @@ opcode_cops_response(const struct pdu* cmd)
   struct pdu_wbuf* wbuf;
   bt_bdaddr_t bd_addr = { {0, 0, 0, 0, 0, 0} };
 
-  cmd = NULL;
+  rsp = NULL;
 
   off = read_pdu_at(cmd, 0, "0", &rsp);
   if (off < 0) {
