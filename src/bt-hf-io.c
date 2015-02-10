@@ -851,7 +851,7 @@ opcode_cops_response(const struct pdu* cmd)
   assert(bthf_interface);
   assert(bthf_interface->cops_response);
 
-  cmd = NULL;
+  rsp = NULL;
 
   off = read_pdu_at(cmd, 0, "0", &rsp);
   if (off < 0) {
