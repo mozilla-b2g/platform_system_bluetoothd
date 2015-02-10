@@ -24,9 +24,8 @@ create_pdu_rbuf(unsigned long maxdatalen)
 {
   struct pdu_rbuf* rbuf;
 
-  errno = 0;
   rbuf = malloc(sizeof(*rbuf) + maxdatalen);
-  if (errno) {
+  if (!rbuf) {
     ALOGE_ERRNO("malloc");
     goto err_malloc;
   }
