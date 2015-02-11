@@ -472,7 +472,10 @@ energy_info_cb(bt_activity_energy_info *energy_info ATTRIBS(UNUSED))
   /* nothing to do */
 }
 
-struct alarm_state {
+struct wake_alarm_param {
+  int clockid;
+  unsigned long long timeout_ms;
+  unsigned long long interval_ms;
   alarm_cb cb;
   void* data;
 };
@@ -480,17 +483,19 @@ struct alarm_state {
 static enum ioresult
 alarm_event_in(int fd, void* data)
 {
-  uint64_t num_expirations;
-  ssize_t res;
+  struct wake_alarm_param* param = data;
 
-  struct alarm_state* alarm_state = data;
-  assert(alarm_state);
-  if (alarm_state->cb)
-    alarm_state->cb(alarm_state->data);
+  assert(param);
 
-  remove_timer(fd);
-  free(data);
-  return IO_OK;
+  if (param->cb)
+    param->cb(param->data);
+
+  remove_fd_from_epoll_loop(fd);
+  if (TEMP_FAILURE_RETRY(close(fd)) < 0)
+    ALOGW_ERRNO("close");
+  free(param);
+
+  return IO_POLL;
 }
 
 static enum ioresult
@@ -504,34 +509,51 @@ alarm_event(int fd, uint32_t events, void* data)
     ALOGW("unsupported event mask: %u", events);
     res = IO_OK;
   }
+
   return res;
+}
+
+static enum ioresult
+set_wake_alarm_task_cb(void* data)
+{
+  struct wake_alarm_param* param = data;
+
+  assert(param);
+
+  if (add_relative_timer_to_epoll_loop(param->clockid, param->timeout_ms,
+                                       param->interval_ms, alarm_event,
+                                       param) < 0)
+    goto err_add_relative_timer_to_epoll_loop;
+
+  return IO_OK;
+err_add_relative_timer_to_epoll_loop:
+  free(param);
+  return IO_OK;
 }
 
 static bool
 set_wake_alarm_cb(uint64_t delay_millis, bool should_wake, alarm_cb cb,
                   void* data)
 {
-  struct alarm_state* alarm_state;
-  int clockid;
+  struct wake_alarm_param* param;
 
-  errno = 0;
-  alarm_state = malloc(sizeof(*alarm_state));
-  if (errno) {
+  param = malloc(sizeof(*param));
+  if (!param) {
     ALOGE_ERRNO("malloc");
     return false;
   }
+  param->clockid = should_wake ? CLOCK_BOOTTIME_ALARM : CLOCK_BOOTTIME;
+  param->timeout_ms = delay_millis;
+  param->interval_ms = 0;
+  param->cb = cb;
+  param->data = data;
 
-  alarm_state->cb = cb;
-  alarm_state->data = data;
-
-  clockid = should_wake ? CLOCK_BOOTTIME_ALARM : CLOCK_BOOTTIME;
-  if (add_relative_timer_to_epoll_loop(clockid, delay_millis, 0, alarm_event,
-                                       alarm_state) < 0)
-    goto err_add_timer_to_epoll_loop;
+  if (run_task(set_wake_alarm_task_cb, param) < 0)
+    goto err_run_task;
 
   return true;
-err_add_timer_to_epoll_loop:
-  free(alarm_state);
+err_run_task:
+  free(param);
   return false;
 }
 
