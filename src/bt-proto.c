@@ -125,9 +125,8 @@ read_pdu_at_va(const struct pdu* pdu, unsigned long offset,
           return -1;
         }
         len = memdiff(pdu->data + offset, chr) + 1; /* include \0 byte */
-        errno = 0;
         dst = malloc(len);
-        if (errno) {
+        if (!dst) {
           ALOGE_ERRNO("malloc");
           return -1;
         }
@@ -177,9 +176,8 @@ read_bt_property_t(const struct pdu* pdu, unsigned long offset,
     return -1;
   offset = res;
 
-  errno = 0;
   val = malloc(len);
-  if (errno) {
+  if (!val) {
     ALOGE_ERRNO("malloc");
     return -1;
   }
