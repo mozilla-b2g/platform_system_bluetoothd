@@ -499,9 +499,8 @@ opcode_get_player_app_attr_text_rsp(const struct pdu* cmd)
   if (off < 0)
     return BT_STATUS_PARM_INVALID;
 
-  errno = 0;
   p_attrs = malloc(num_attr * sizeof(*p_attrs));
-  if (errno) {
+  if (!p_attrs) {
     ALOGE_ERRNO("malloc");
     return BT_STATUS_NOMEM;
   }
@@ -549,9 +548,8 @@ opcode_get_player_app_value_text_rsp(const struct pdu* cmd)
   if (off < 0)
     return BT_STATUS_PARM_INVALID;
 
-  errno = 0;
   p_attrs = malloc(num_attr * sizeof(*p_attrs));
-  if (errno) {
+  if (!p_attrs) {
     ALOGE_ERRNO("malloc");
     return BT_STATUS_NOMEM;
   }
@@ -599,9 +597,8 @@ opcode_get_element_attr_rsp(const struct pdu* cmd)
   if (off < 0)
     return BT_STATUS_PARM_INVALID;
 
-  errno = 0;
   p_attrs = malloc(num_attr * sizeof(*p_attrs));
-  if (errno) {
+  if (!p_attrs) {
     ALOGE_ERRNO("malloc");
     return BT_STATUS_NOMEM;
   }

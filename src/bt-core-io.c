@@ -15,7 +15,6 @@
  */
 
 #include <assert.h>
-#include <errno.h>
 #include <stdlib.h>
 #include <sys/epoll.h>
 #include <hardware_legacy/power.h>
@@ -143,6 +142,10 @@ align_properties(bt_property_t* properties, size_t num_properties,
   siz = sizeof(**aligned_properties) * num_properties;
 
   *aligned_properties = malloc(siz);
+  if (!*aligned_properties) {
+    ALOGE_ERRNO("malloc");
+    return NULL;
+  }
   memcpy(*aligned_properties, properties, siz);
 
   return *aligned_properties;
@@ -157,6 +160,8 @@ adapter_properties_cb(bt_status_t status, int num_properties,
 
   properties = align_properties(properties, num_properties,
                                 &aligned_properties);
+  if (!properties)
+    return;
 
   wbuf = create_pdu_wbuf(1 + /* status */
                          1 + /* number of properties */
@@ -198,6 +203,8 @@ remote_device_properties_cb(bt_status_t status,
 
   properties = align_properties(properties, num_properties,
                                 &aligned_properties);
+  if (!properties)
+    return;
 
   wbuf = create_pdu_wbuf(1 + /* status */
                          6 + /* address */
@@ -237,6 +244,8 @@ device_found_cb(int num_properties, bt_property_t* properties)
 
   properties = align_properties(properties, num_properties,
                                 &aligned_properties);
+  if (!properties)
+    return;
 
   wbuf = create_pdu_wbuf(1 + /* number of properties */
                          properties_length(num_properties, properties),
