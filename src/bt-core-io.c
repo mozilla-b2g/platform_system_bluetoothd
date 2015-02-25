@@ -1394,6 +1394,28 @@ unregister_bt_core()
   return 0;
 }
 
+int
+enable_hci_snooping(int enabled)
+{
+#if ANDROID_VERSION >= 19
+  int status;
+
+  if (!bt_interface || !bt_interface->config_hci_snoop_log) {
+    return -1;
+  }
+
+  status = bt_interface->config_hci_snoop_log(!!enabled);
+  if (status != BT_STATUS_SUCCESS) {
+    ALOGE("bt_interface_t::config_hci_snoop_log failed");
+    return -1;
+  }
+
+  return 0;
+#else
+  return -1;
+#endif
+}
+
 const void*
 get_profile_interface(const char* profile_id)
 {

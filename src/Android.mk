@@ -24,3 +24,16 @@ LOCAL_MODULE:= bluetoothd
 LOCAL_MODULE_PATH := $(TARGET_OUT_EXECUTABLES)
 LOCAL_MODULE_TAGS := optional
 include $(BUILD_EXECUTABLE)
+
+include $(CLEAR_VARS)
+LOCAL_SRC_FILES:= snoop.c
+LOCAL_C_INCLUDES := system/libfdio/include
+LOCAL_CFLAGS := -DANDROID_VERSION=$(PLATFORM_SDK_VERSION) -Wall -Werror
+LOCAL_SHARED_LIBRARIES := libfdio \
+                          libhardware_legacy \
+                          libcutils \
+                          liblog
+LOCAL_MODULE:= bluetoothd-snoop
+LOCAL_MODULE_PATH := $(TARGET_OUT_EXECUTABLES)
+LOCAL_MODULE_TAGS := optional
+include $(BUILD_EXECUTABLE)

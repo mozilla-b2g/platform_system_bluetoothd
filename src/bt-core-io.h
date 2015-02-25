@@ -26,5 +26,8 @@ bt_status_t
 int
 unregister_bt_core(void);
 
+int
+enable_hci_snooping(int enabled);
+
 const void*
 get_profile_interface(const char* profile_id);
