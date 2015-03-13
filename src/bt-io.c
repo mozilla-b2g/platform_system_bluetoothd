@@ -328,6 +328,10 @@ err_handle_pdu_by_service:
   return 0; /* signal success because we replied with an error */
 }
 
+/*
+ * Connection setup
+ */
+
 static int
 connect_socket(const char* socket_name,
                enum ioresult (*func)(int, uint32_t, void*),
@@ -513,29 +517,16 @@ fd_event_out(int fd, void* data)
   return res;
 }
 
-/* |fd_event| handles accepted connection requests. ERR is always handled.
- */
-static enum ioresult
-fd_event(int fd, uint32_t events, void* data)
-{
-  enum ioresult res;
-
-  if (events & EPOLLERR) {
-    res = fd_event_err(fd, data);
-  } else if (events & EPOLLOUT) {
-    res = fd_event_out(fd, data);
-  } else {
-    ALOGW("unsupported event mask: %u", events);
-    res = IO_OK;
-  }
-
-  return res;
-}
-
 int
 init_bt_io(const char* socket_name)
 {
   static unsigned long remaining_fds = (unsigned long)ARRAY_LENGTH(io_state);
+
+  static struct fd_events evfuncs = {
+    .data = &remaining_fds,
+    .epollout = fd_event_out,
+    .epollin = fd_event_err
+  };
 
   int fd, res;
 
@@ -544,7 +535,7 @@ init_bt_io(const char* socket_name)
    * second is for notifications.
    */
 
-  fd = connect_socket(socket_name, fd_event, &remaining_fds);
+  fd = connect_socket(socket_name, fd_events_handler, &evfuncs);
   if (fd < 0)
     return -1;
 
@@ -554,7 +545,7 @@ init_bt_io(const char* socket_name)
   io_state[0].handle_pdu = handle_pdu;
   io_state[0].rbuf = NULL;
 
-  fd = connect_socket(socket_name, fd_event, &remaining_fds);
+  fd = connect_socket(socket_name, fd_events_handler, &evfuncs);
   if (fd < 0)
     goto err_connect_socket;
 
