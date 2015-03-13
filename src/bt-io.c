@@ -53,6 +53,7 @@ struct io_state {
   int fd;
   uint32_t epoll_events;
   enum ioresult (*epoll_func)(int, uint32_t, void*);
+  int (*handle_pdu)(const struct pdu* cmd);
   struct pdu_rbuf* rbuf;
   struct pdu_wbuf_stailq sendq;
 };
@@ -89,14 +90,14 @@ io_state_hup(struct io_state* io_state)
 }
 
 static int
-io_state_in(struct io_state* io_state, int (*handle_pdu)(const struct pdu*))
+io_state_in(struct io_state* io_state)
 {
   struct iovec iv;
   struct msghdr msg;
   ssize_t res;
 
   assert(io_state);
-  assert(handle_pdu);
+  assert(io_state->handle_pdu);
 
   acquire_wake_lock(PARTIAL_WAKE_LOCK, WAKE_LOCK_NAME);
 
@@ -131,7 +132,7 @@ io_state_in(struct io_state* io_state, int (*handle_pdu)(const struct pdu*))
   io_state->rbuf->len = res;
 
   if (pdu_rbuf_has_pdu(io_state->rbuf)) {
-    if (handle_pdu(&io_state->rbuf->buf.pdu) < 0)
+    if (io_state->handle_pdu(&io_state->rbuf->buf.pdu) < 0)
       goto err_pdu;
     io_state->rbuf->len = 0;
   } else if (pdu_rbuf_is_full(io_state->rbuf)) {
@@ -223,6 +224,7 @@ err_add_fd_to_epoll_loop:
     .fd = -1, \
     .epoll_events = 0, \
     .epoll_func = (_epoll_func), \
+    .handle_pdu = NULL, \
     .rbuf = NULL, \
     STAILQ_HEAD_INITIALIZER((_io_state).sendq) \
   }
@@ -304,7 +306,7 @@ io_fd_event_in(int fd ATTRIBS(UNUSED), void* data)
   io_state = data;
   assert(io_state->fd == fd);
 
-  if (io_state_in(io_state, handle_pdu) < 0)
+  if (io_state_in(io_state) < 0)
     return IO_ABORT;
 
   return IO_OK;
@@ -601,6 +603,7 @@ init_bt_io(const char* socket_name)
 
   io_state[0].fd = fd;
   io_state[0].epoll_events = 0;
+  io_state[0].handle_pdu = handle_pdu;
   io_state[0].rbuf = NULL;
 
   fd = connect_socket(socket_name, fd_event, &remaining_fds);
