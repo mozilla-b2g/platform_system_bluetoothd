@@ -142,13 +142,1447 @@ enum {
 static void (*send_pdu)(struct pdu_wbuf* wbuf);
 static const btgatt_interface_t* btgatt_interface;
 
+static enum ioresult
+send_ntf_pdu(void* data)
+{
+  /* send notification on I/O thread */
+  if (!send_pdu) {
+    ALOGE("send_pdu is NULL");
+    return IO_OK;
+  }
+  send_pdu(data);
+  return IO_OK;
+}
+
 /*
  * Protocol helpers
  */
 
+static long
+append_btgatt_gatt_id_t(struct pdu* pdu, const btgatt_gatt_id_t* gatt_id)
+{
+  if (append_bt_uuid_t(pdu, &gatt_id->uuid) < 0)
+    return -1;
+  return append_to_pdu(pdu, "C", gatt_id->inst_id);
+}
+
+static long
+append_btgatt_srvc_id_t(struct pdu* pdu, const btgatt_srvc_id_t* srvc_id)
+{
+  if (append_btgatt_gatt_id_t(pdu, &srvc_id->id) < 0)
+    return -1;
+  return append_to_pdu(pdu, "C", srvc_id->is_primary);
+}
+
+static long
+append_btgatt_notify_params_t(struct pdu* pdu,
+                              const btgatt_notify_params_t* params)
+{
+  if ((append_bt_bdaddr_t(pdu, &params->bda) < 0) ||
+      (append_btgatt_srvc_id_t(pdu, &params->srvc_id) < 0) ||
+      (append_btgatt_gatt_id_t(pdu, &params->char_id) < 0))
+    return -1;
+  return append_to_pdu(pdu, "CSm", params->is_notify, params->len,
+                                   params->value, (size_t)params->len);
+}
+
+static long
+append_btgatt_unformatted_value_t(struct pdu* pdu,
+                                  const btgatt_unformatted_value_t* value)
+{
+  return append_to_pdu(pdu, "Sm", value->len, value->value,
+                                  (size_t)value->len);
+}
+
+static long
+append_btgatt_read_params_t(struct pdu* pdu,
+                            const btgatt_read_params_t* params)
+{
+  if ((append_btgatt_srvc_id_t(pdu, &params->srvc_id) < 0) ||
+      (append_btgatt_gatt_id_t(pdu, &params->char_id) < 0) ||
+      (append_btgatt_gatt_id_t(pdu, &params->descr_id) < 0) ||
+      (append_to_pdu(pdu, "CS", params->status, params->value_type) < 0))
+    return -1;
+  return append_btgatt_unformatted_value_t(pdu, &params->value);
+}
+
+static long
+append_btgatt_write_params_t(struct pdu* pdu,
+                             const btgatt_write_params_t* params)
+{
+  if ((append_btgatt_srvc_id_t(pdu, &params->srvc_id) < 0) ||
+      (append_btgatt_gatt_id_t(pdu, &params->char_id) < 0) ||
+      (append_btgatt_gatt_id_t(pdu, &params->descr_id) < 0))
+    return -1;
+  return append_to_pdu(pdu, "C", params->status);
+}
+
 /*
  * Notifications
  */
+
+static void
+client_register_client_cb(int status, int client_if, bt_uuid_t* app_uuid)
+{
+  struct pdu_wbuf* wbuf;
+
+  wbuf = create_pdu_wbuf(4 + /* status */
+                         4 + /* client */
+                         16, /* UUID */
+                         0, NULL);
+  if (!wbuf)
+    return;
+
+  init_pdu(&wbuf->buf.pdu, SERVICE_BT_GATT, OPCODE_CLIENT_REGISTER_NTF);
+  if ((append_to_pdu(&wbuf->buf.pdu, "ii", (int32_t)status,
+                                           (int32_t)client_if) < 0) ||
+      (append_bt_uuid_t(&wbuf->buf.pdu, app_uuid) < 0))
+    goto cleanup;
+
+  if (run_task(send_ntf_pdu, wbuf) < 0)
+    goto cleanup;
+
+  return;
+cleanup:
+  cleanup_pdu_wbuf(wbuf);
+}
+
+static void
+client_scan_result_cb(bt_bdaddr_t* bd_addr, int rssi, uint8_t* adv_data)
+{
+  size_t len;
+  struct pdu_wbuf* wbuf;
+
+  if (adv_data) {
+    len = strlen((const char*)adv_data);
+    if (len > USHRT_MAX) {
+      ALOGE("data too long");
+      return;
+    }
+  } else {
+    len = 0;
+  }
+
+  wbuf = create_pdu_wbuf(6 + /* address */
+                         4 + /* RSSI */
+                         2 + /* data length */
+                         len, /* data */
+                         0, NULL);
+  if (!wbuf)
+    return;
+
+  init_pdu(&wbuf->buf.pdu, SERVICE_BT_GATT, OPCODE_CLIENT_SCAN_RESULT_NTF);
+  if ((append_bt_bdaddr_t(&wbuf->buf.pdu, bd_addr) < 0) ||
+      (append_to_pdu(&wbuf->buf.pdu, "iSm", (int32_t)rssi,
+                                            (uint16_t)len,
+                                            adv_data, len) < 0))
+    goto cleanup;
+
+  if (run_task(send_ntf_pdu, wbuf) < 0)
+    goto cleanup;
+
+  return;
+cleanup:
+  cleanup_pdu_wbuf(wbuf);
+}
+
+static void
+client_open_cb(int conn_id, int status, int client_if, bt_bdaddr_t* bd_addr)
+{
+  struct pdu_wbuf* wbuf;
+
+  wbuf = create_pdu_wbuf(4 + /* connection ID */
+                         4 + /* status */
+                         4 + /* client */
+                         6, /* address */
+                         0, NULL);
+  if (!wbuf)
+    return;
+
+  init_pdu(&wbuf->buf.pdu, SERVICE_BT_GATT, OPCODE_CLIENT_CONNECT_DEVICE_NTF);
+  if ((append_to_pdu(&wbuf->buf.pdu, "iii", (int32_t)conn_id,
+                                            (int32_t)status,
+                                            (int32_t)client_if) < 0) ||
+      (append_bt_bdaddr_t(&wbuf->buf.pdu, bd_addr) < 0))
+    goto cleanup;
+
+  if (run_task(send_ntf_pdu, wbuf) < 0)
+    goto cleanup;
+
+  return;
+cleanup:
+  cleanup_pdu_wbuf(wbuf);
+}
+
+static void
+client_close_cb(int conn_id, int status, int client_if, bt_bdaddr_t* bd_addr)
+{
+  struct pdu_wbuf* wbuf;
+
+  wbuf = create_pdu_wbuf(4 + /* connection ID */
+                         4 + /* status */
+                         4 + /* client */
+                         6, /* address */
+                         0, NULL);
+  if (!wbuf)
+    return;
+
+  init_pdu(&wbuf->buf.pdu, SERVICE_BT_GATT, OPCODE_CLIENT_DISCONNECT_DEVICE_NTF);
+  if ((append_to_pdu(&wbuf->buf.pdu, "iii", (int32_t)conn_id,
+                                            (int32_t)status,
+                                            (int32_t)client_if) < 0) ||
+      (append_bt_bdaddr_t(&wbuf->buf.pdu, bd_addr) < 0))
+    goto cleanup;
+
+  if (run_task(send_ntf_pdu, wbuf) < 0)
+    goto cleanup;
+
+  return;
+cleanup:
+  cleanup_pdu_wbuf(wbuf);
+}
+
+static void
+client_search_complete_cb(int conn_id, int status)
+{
+  struct pdu_wbuf* wbuf;
+
+  wbuf = create_pdu_wbuf(4 + /* connection ID */
+                         4, /* status */
+                         0, NULL);
+  if (!wbuf)
+    return;
+
+  init_pdu(&wbuf->buf.pdu, SERVICE_BT_GATT, OPCODE_CLIENT_SEARCH_COMPLETE_NTF);
+  if ((append_to_pdu(&wbuf->buf.pdu, "ii", (int32_t)conn_id,
+                                           (int32_t)status) < 0))
+    goto cleanup;
+
+  if (run_task(send_ntf_pdu, wbuf) < 0)
+    goto cleanup;
+
+  return;
+cleanup:
+  cleanup_pdu_wbuf(wbuf);
+}
+
+static void
+client_search_result_cb(int conn_id, btgatt_srvc_id_t* srvc_id)
+{
+  struct pdu_wbuf* wbuf;
+
+  wbuf = create_pdu_wbuf(4 + /* connection ID */
+                         18, /* GATT service ID */
+                         0, NULL);
+  if (!wbuf)
+    return;
+
+  init_pdu(&wbuf->buf.pdu, SERVICE_BT_GATT, OPCODE_CLIENT_SEARCH_RESULT_NTF);
+  if ((append_to_pdu(&wbuf->buf.pdu, "i", (int32_t)conn_id) < 0) ||
+      (append_btgatt_srvc_id_t(&wbuf->buf.pdu, srvc_id) < 0))
+    goto cleanup;
+
+  if (run_task(send_ntf_pdu, wbuf) < 0)
+    goto cleanup;
+
+  return;
+cleanup:
+  cleanup_pdu_wbuf(wbuf);
+}
+
+static void
+client_get_characteristic_cb(int conn_id, int status,
+                             btgatt_srvc_id_t* srvc_id,
+                             btgatt_gatt_id_t* char_id, int char_prop)
+{
+  struct pdu_wbuf* wbuf;
+
+  wbuf = create_pdu_wbuf(4 + /* connection ID */
+                         4 + /* status */
+                         18 + /* service ID */
+                         17 + /* characterisic ID */
+                         4, /* char prop */
+                         0, NULL);
+  if (!wbuf)
+    return;
+
+  init_pdu(&wbuf->buf.pdu, SERVICE_BT_GATT, OPCODE_CLIENT_GET_CHARACTERISTIC_NTF);
+  if ((append_to_pdu(&wbuf->buf.pdu, "ii", (int32_t)conn_id,
+                                           (int32_t)status) < 0) ||
+      (append_btgatt_srvc_id_t(&wbuf->buf.pdu, srvc_id) < 0) ||
+      (append_btgatt_gatt_id_t(&wbuf->buf.pdu, char_id) < 0) ||
+      (append_to_pdu(&wbuf->buf.pdu, "i", (int32_t)char_prop) < 0))
+    goto cleanup;
+
+  if (run_task(send_ntf_pdu, wbuf) < 0)
+    goto cleanup;
+
+  return;
+cleanup:
+  cleanup_pdu_wbuf(wbuf);
+}
+
+static void
+client_get_descriptor_cb(int conn_id, int status,
+                         btgatt_srvc_id_t* srvc_id,
+                         btgatt_gatt_id_t* char_id,
+                         btgatt_gatt_id_t* descr_id)
+{
+  struct pdu_wbuf* wbuf;
+
+  wbuf = create_pdu_wbuf(4 + /* connection ID */
+                         4 + /* status */
+                         18 + /* GATT service ID */
+                         17 + /* GATT characteristic ID */
+                         17, /* GATT descriptor ID */
+                         0, NULL);
+  if (!wbuf)
+    return;
+
+  init_pdu(&wbuf->buf.pdu, SERVICE_BT_GATT, OPCODE_CLIENT_GET_DESCRIPTOR_NTF);
+  if ((append_to_pdu(&wbuf->buf.pdu, "ii", (int32_t)conn_id,
+                                           (int32_t)status) < 0) ||
+      (append_btgatt_srvc_id_t(&wbuf->buf.pdu, srvc_id) < 0) ||
+      (append_btgatt_gatt_id_t(&wbuf->buf.pdu, char_id) < 0) ||
+      (append_btgatt_gatt_id_t(&wbuf->buf.pdu, descr_id) < 0))
+    goto cleanup;
+
+  if (run_task(send_ntf_pdu, wbuf) < 0)
+    goto cleanup;
+
+  return;
+cleanup:
+  cleanup_pdu_wbuf(wbuf);
+}
+
+static void
+client_get_included_service_cb(int conn_id, int status,
+                               btgatt_srvc_id_t* srvc_id,
+                               btgatt_srvc_id_t* incl_srvc_id)
+{
+  struct pdu_wbuf* wbuf;
+
+  wbuf = create_pdu_wbuf(4 + /* connection ID */
+                         4 + /* status */
+                         18 + /* GATT service ID */
+                         18, /* GATT included service ID */
+                         0, NULL);
+  if (!wbuf)
+    return;
+
+  init_pdu(&wbuf->buf.pdu, SERVICE_BT_GATT,
+           OPCODE_CLIENT_GET_INCLUDED_SERVICE_NTF);
+  if ((append_to_pdu(&wbuf->buf.pdu, "ii", (int32_t)conn_id,
+                                           (int32_t)status) < 0) ||
+      (append_btgatt_srvc_id_t(&wbuf->buf.pdu, srvc_id) < 0) ||
+      (append_btgatt_srvc_id_t(&wbuf->buf.pdu, incl_srvc_id) < 0))
+    goto cleanup;
+
+  if (run_task(send_ntf_pdu, wbuf) < 0)
+    goto cleanup;
+
+  return;
+cleanup:
+  cleanup_pdu_wbuf(wbuf);
+}
+
+static void
+client_register_for_notification_cb(int conn_id, int registered, int status,
+                                    btgatt_srvc_id_t* srvc_id,
+                                    btgatt_gatt_id_t* char_id)
+{
+  struct pdu_wbuf* wbuf;
+
+  wbuf = create_pdu_wbuf(4 + /* connection ID */
+                         4 + /* registered */
+                         4 + /* status */
+                         18 + /* GATT service ID */
+                         17, /* GATT characteristic ID */
+                         0, NULL);
+  if (!wbuf)
+    return;
+
+  init_pdu(&wbuf->buf.pdu, SERVICE_BT_GATT,
+           OPCODE_CLIENT_REGISTER_FOR_NOTIFICATION_NTF);
+  if ((append_to_pdu(&wbuf->buf.pdu, "iii", (int32_t)conn_id,
+                                            (int32_t)registered,
+                                            (int32_t)status) < 0) ||
+      (append_btgatt_srvc_id_t(&wbuf->buf.pdu, srvc_id) < 0) ||
+      (append_btgatt_gatt_id_t(&wbuf->buf.pdu, char_id) < 0))
+    goto cleanup;
+
+  if (run_task(send_ntf_pdu, wbuf) < 0)
+    goto cleanup;
+
+  return;
+cleanup:
+  cleanup_pdu_wbuf(wbuf);
+}
+
+static void
+client_notify_cb(int conn_id, btgatt_notify_params_t* p_data)
+{
+  struct pdu_wbuf* wbuf;
+
+  wbuf = create_pdu_wbuf(4 + /* connection ID */
+                         44 + p_data->len, /* GATT notify parameters */
+                         0, NULL);
+  if (!wbuf)
+    return;
+
+  init_pdu(&wbuf->buf.pdu, SERVICE_BT_GATT, OPCODE_CLIENT_NOTIFY_NTF);
+  if ((append_to_pdu(&wbuf->buf.pdu, "i", (int32_t)conn_id) < 0) ||
+      (append_btgatt_notify_params_t(&wbuf->buf.pdu, p_data) < 0))
+    goto cleanup;
+
+  if (run_task(send_ntf_pdu, wbuf) < 0)
+    goto cleanup;
+
+  return;
+cleanup:
+  cleanup_pdu_wbuf(wbuf);
+}
+
+static void
+client_read_characteristic_cb(int conn_id, int status,
+                              btgatt_read_params_t* p_data)
+{
+  struct pdu_wbuf* wbuf;
+
+  wbuf = create_pdu_wbuf(4 + /* connection ID */
+                         4 + /* status ID */
+                         59 + p_data->value.len, /* GATT read parameters */
+                         0, NULL);
+  if (!wbuf)
+    return;
+
+  init_pdu(&wbuf->buf.pdu, SERVICE_BT_GATT,
+           OPCODE_CLIENT_READ_CHARACTERISTIC_NTF);
+  if ((append_to_pdu(&wbuf->buf.pdu, "ii", (int32_t)conn_id,
+                                           (int32_t)status) < 0) ||
+      (append_btgatt_read_params_t(&wbuf->buf.pdu, p_data) < 0))
+    goto cleanup;
+
+  if (run_task(send_ntf_pdu, wbuf) < 0)
+    goto cleanup;
+
+  return;
+cleanup:
+  cleanup_pdu_wbuf(wbuf);
+}
+
+static void
+client_write_characteristic_cb(int conn_id, int status,
+                               btgatt_write_params_t* p_data)
+{
+  struct pdu_wbuf* wbuf;
+
+  wbuf = create_pdu_wbuf(4 + /* connection ID */
+                         4 + /* status */
+                         53, /* GATT write parameters*/
+                         0, NULL);
+  if (!wbuf)
+    return;
+
+  init_pdu(&wbuf->buf.pdu, SERVICE_BT_GATT,
+           OPCODE_CLIENT_WRITE_CHARACTERISTIC_NTF);
+  if ((append_to_pdu(&wbuf->buf.pdu, "ii", (int32_t)conn_id,
+                                           (int32_t)status) < 0) ||
+      (append_btgatt_write_params_t(&wbuf->buf.pdu, p_data) < 0))
+    goto cleanup;
+
+  if (run_task(send_ntf_pdu, wbuf) < 0)
+    goto cleanup;
+
+  return;
+cleanup:
+  cleanup_pdu_wbuf(wbuf);
+}
+
+static void
+client_read_descriptor_cb(int conn_id, int status,
+                          btgatt_read_params_t* p_data)
+{
+  struct pdu_wbuf* wbuf;
+
+  wbuf = create_pdu_wbuf(4 + /* connection ID */
+                         4 + /* status ID */
+                         59 + p_data->value.len, /* GATT read parameters */
+                         0, NULL);
+  if (!wbuf)
+    return;
+
+  init_pdu(&wbuf->buf.pdu, SERVICE_BT_GATT,
+           OPCODE_CLIENT_READ_DESCRIPTOR_NTF);
+  if ((append_to_pdu(&wbuf->buf.pdu, "ii", (int32_t)conn_id,
+                                           (int32_t)status) < 0) ||
+      (append_btgatt_read_params_t(&wbuf->buf.pdu, p_data) < 0))
+    goto cleanup;
+
+  if (run_task(send_ntf_pdu, wbuf) < 0)
+    goto cleanup;
+
+  return;
+cleanup:
+  cleanup_pdu_wbuf(wbuf);
+}
+
+static void
+client_write_descriptor_cb(int conn_id, int status,
+                           btgatt_write_params_t* p_data)
+{
+  struct pdu_wbuf* wbuf;
+
+  wbuf = create_pdu_wbuf(4 + /* connection ID */
+                         4 + /* status */
+                         53, /* GATT write parameters*/
+                         0, NULL);
+  if (!wbuf)
+    return;
+
+  init_pdu(&wbuf->buf.pdu, SERVICE_BT_GATT,
+           OPCODE_CLIENT_WRITE_DESCRIPTOR_NTF);
+  if ((append_to_pdu(&wbuf->buf.pdu, "ii", (int32_t)conn_id,
+                                           (int32_t)status) < 0) ||
+      (append_btgatt_write_params_t(&wbuf->buf.pdu, p_data) < 0))
+    goto cleanup;
+
+  if (run_task(send_ntf_pdu, wbuf) < 0)
+    goto cleanup;
+
+  return;
+cleanup:
+  cleanup_pdu_wbuf(wbuf);
+}
+
+static void
+client_execute_write_cb(int conn_id, int status)
+{
+  struct pdu_wbuf* wbuf;
+
+  wbuf = create_pdu_wbuf(4 + /* connection ID */
+                         4, /* status */
+                         0, NULL);
+  if (!wbuf)
+    return;
+
+  init_pdu(&wbuf->buf.pdu, SERVICE_BT_GATT, OPCODE_CLIENT_EXECUTE_WRITE_NTF);
+  if (append_to_pdu(&wbuf->buf.pdu, "ii", (int32_t)conn_id,
+                                          (int32_t)status) < 0)
+    goto cleanup;
+
+  if (run_task(send_ntf_pdu, wbuf) < 0)
+    goto cleanup;
+
+  return;
+cleanup:
+  cleanup_pdu_wbuf(wbuf);
+}
+
+static void
+client_read_remote_rssi_cb(int client_if, bt_bdaddr_t* bd_addr, int rssi,
+                           int status)
+{
+  struct pdu_wbuf* wbuf;
+
+  wbuf = create_pdu_wbuf(4 + /* client */
+                         6 + /* address */
+                         4 + /* RSSI */
+                         4, /* status */
+                         0, NULL);
+  if (!wbuf)
+    return;
+
+  init_pdu(&wbuf->buf.pdu, SERVICE_BT_GATT, OPCODE_CLIENT_READ_REMOTE_RSSI_NTF);
+  if ((append_to_pdu(&wbuf->buf.pdu, "i", (int32_t)client_if) < 0) ||
+      (append_bt_bdaddr_t(&wbuf->buf.pdu, bd_addr) < 0) ||
+      (append_to_pdu(&wbuf->buf.pdu, "ii", (int32_t)rssi,
+                                           (int32_t)status) < 0))
+    goto cleanup;
+
+  if (run_task(send_ntf_pdu, wbuf) < 0)
+    goto cleanup;
+
+  return;
+cleanup:
+  cleanup_pdu_wbuf(wbuf);
+}
+
+static void
+client_listen_cb(int status, int server_if)
+{
+  struct pdu_wbuf* wbuf;
+
+  wbuf = create_pdu_wbuf(4 + /* status */
+                         4, /* server */
+                         0, NULL);
+  if (!wbuf)
+    return;
+
+  init_pdu(&wbuf->buf.pdu, SERVICE_BT_GATT, OPCODE_CLIENT_LISTEN_NTF);
+  if (append_to_pdu(&wbuf->buf.pdu, "ii", (int32_t)status,
+                                          (int32_t)server_if) < 0)
+    goto cleanup;
+
+  if (run_task(send_ntf_pdu, wbuf) < 0)
+    goto cleanup;
+
+  return;
+cleanup:
+  cleanup_pdu_wbuf(wbuf);
+}
+
+#if ANDROID_VERSION >= 21
+static void
+client_configure_mtu_cb(int conn_id, int status, int mtu)
+{
+  struct pdu_wbuf* wbuf;
+
+  wbuf = create_pdu_wbuf(4 + /* connection ID */
+                         4 + /* status */
+                         4, /* MTU */
+                         0, NULL);
+  if (!wbuf)
+    return;
+
+  init_pdu(&wbuf->buf.pdu, SERVICE_BT_GATT, OPCODE_CLIENT_CONFIGURE_MTU_NTF);
+  if (append_to_pdu(&wbuf->buf.pdu, "iii", (int32_t)conn_id,
+                                           (int32_t)status,
+                                           (int32_t)conn_id) < 0)
+    goto cleanup;
+
+  if (run_task(send_ntf_pdu, wbuf) < 0)
+    goto cleanup;
+
+  return;
+cleanup:
+  cleanup_pdu_wbuf(wbuf);
+}
+
+static void
+client_scan_filter_cfg_cb(int action, int client_if, int status,
+                          int filt_type, int avbl_space)
+{
+  struct pdu_wbuf* wbuf;
+
+  wbuf = create_pdu_wbuf(4 + /* action */
+                         4 + /* client */
+                         4 + /* status */
+                         4 + /* filter type */
+                         4, /* available space */
+                         0, NULL);
+  if (!wbuf)
+    return;
+
+  init_pdu(&wbuf->buf.pdu, SERVICE_BT_GATT,
+           OPCODE_CLIENT_SCAN_FILTER_CONFIGURATION_NTF);
+  if (append_to_pdu(&wbuf->buf.pdu, "iiiii", (int32_t)action,
+                                             (int32_t)client_if,
+                                             (int32_t)status,
+                                             (int32_t)filt_type,
+                                             (int32_t)avbl_space) < 0)
+    goto cleanup;
+
+  if (run_task(send_ntf_pdu, wbuf) < 0)
+    goto cleanup;
+
+  return;
+cleanup:
+  cleanup_pdu_wbuf(wbuf);
+}
+
+static void
+client_scan_filter_param_cb(int action, int client_if, int status,
+                            int avbl_space)
+{
+  struct pdu_wbuf* wbuf;
+
+  wbuf = create_pdu_wbuf(4 + /* action */
+                         4 + /* client */
+                         4 + /* status */
+                         4, /* available space */
+                         0, NULL);
+  if (!wbuf)
+    return;
+
+  init_pdu(&wbuf->buf.pdu, SERVICE_BT_GATT,
+           OPCODE_CLIENT_SCAN_FILTER_PARAMETERS_NTF);
+  if (append_to_pdu(&wbuf->buf.pdu, "iiii", (int32_t)action,
+                                            (int32_t)client_if,
+                                            (int32_t)status,
+                                            (int32_t)avbl_space) < 0)
+    goto cleanup;
+
+  if (run_task(send_ntf_pdu, wbuf) < 0)
+    goto cleanup;
+
+  return;
+cleanup:
+  cleanup_pdu_wbuf(wbuf);
+}
+
+static void
+client_scan_filter_status_cb(int enable, int client_if, int status)
+{
+  struct pdu_wbuf* wbuf;
+
+  wbuf = create_pdu_wbuf(4 + /* enable */
+                         4 + /* client */
+                         4, /* status */
+                         0, NULL);
+  if (!wbuf)
+    return;
+
+  init_pdu(&wbuf->buf.pdu, SERVICE_BT_GATT,
+           OPCODE_CLIENT_SCAN_FILTER_STATUS_NTF);
+  if (append_to_pdu(&wbuf->buf.pdu, "iii", (int32_t)enable,
+                                           (int32_t)client_if,
+                                           (int32_t)status) < 0)
+    goto cleanup;
+
+  if (run_task(send_ntf_pdu, wbuf) < 0)
+    goto cleanup;
+
+  return;
+cleanup:
+  cleanup_pdu_wbuf(wbuf);
+}
+
+static void
+client_multi_adv_enable_cb(int client_if, int status)
+{
+  struct pdu_wbuf* wbuf;
+
+  wbuf = create_pdu_wbuf(4 + /* client */
+                         4, /* status */
+                         0, NULL);
+  if (!wbuf)
+    return;
+
+  init_pdu(&wbuf->buf.pdu, SERVICE_BT_GATT,
+           OPCODE_CLIENT_MULTI_ADVERTISING_ENABLE_NTF);
+  if (append_to_pdu(&wbuf->buf.pdu, "ii", (int32_t)client_if,
+                                          (int32_t)status) < 0)
+    goto cleanup;
+
+  if (run_task(send_ntf_pdu, wbuf) < 0)
+    goto cleanup;
+
+  return;
+cleanup:
+  cleanup_pdu_wbuf(wbuf);
+}
+
+static void
+client_multi_adv_update_cb(int client_if, int status)
+{
+  struct pdu_wbuf* wbuf;
+
+  wbuf = create_pdu_wbuf(4 + /* client */
+                         4, /* status */
+                         0, NULL);
+  if (!wbuf)
+    return;
+
+  init_pdu(&wbuf->buf.pdu, SERVICE_BT_GATT,
+           OPCODE_CLIENT_MULTI_ADVERTISING_UPDATE_NTF);
+  if (append_to_pdu(&wbuf->buf.pdu, "ii", (int32_t)client_if,
+                                          (int32_t)status) < 0)
+    goto cleanup;
+
+  if (run_task(send_ntf_pdu, wbuf) < 0)
+    goto cleanup;
+
+  return;
+cleanup:
+  cleanup_pdu_wbuf(wbuf);
+}
+
+static void
+client_multi_adv_data_cb(int client_if, int status)
+{
+  struct pdu_wbuf* wbuf;
+
+  wbuf = create_pdu_wbuf(4 + /* client */
+                         4, /* status */
+                         0, NULL);
+  if (!wbuf)
+    return;
+
+  init_pdu(&wbuf->buf.pdu, SERVICE_BT_GATT,
+           OPCODE_CLIENT_MULTI_ADVERTISING_DATA_NTF);
+  if (append_to_pdu(&wbuf->buf.pdu, "ii", (int32_t)client_if,
+                                          (int32_t)status) < 0)
+    goto cleanup;
+
+  if (run_task(send_ntf_pdu, wbuf) < 0)
+    goto cleanup;
+
+  return;
+cleanup:
+  cleanup_pdu_wbuf(wbuf);
+}
+
+static void
+client_multi_adv_disable_cb(int client_if, int status)
+{
+  struct pdu_wbuf* wbuf;
+
+  wbuf = create_pdu_wbuf(4 + /* client */
+                         4, /* status */
+                         0, NULL);
+  if (!wbuf)
+    return;
+
+  init_pdu(&wbuf->buf.pdu, SERVICE_BT_GATT,
+           OPCODE_CLIENT_MULTI_ADVERTISING_DISABLE_NTF);
+  if (append_to_pdu(&wbuf->buf.pdu, "ii", (int32_t)client_if,
+                                          (int32_t)status) < 0)
+    goto cleanup;
+
+  if (run_task(send_ntf_pdu, wbuf) < 0)
+    goto cleanup;
+
+  return;
+cleanup:
+  cleanup_pdu_wbuf(wbuf);
+}
+
+static void
+client_congestion_cb(int conn_id, bool congested)
+{
+  struct pdu_wbuf* wbuf;
+
+  wbuf = create_pdu_wbuf(4 + /* connection ID */
+                         1, /* congested */
+                         0, NULL);
+  if (!wbuf)
+    return;
+
+  init_pdu(&wbuf->buf.pdu, SERVICE_BT_GATT, OPCODE_CLIENT_CONGESTION_NTF);
+  if (append_to_pdu(&wbuf->buf.pdu, "iC", (int32_t)conn_id,
+                                          (uint8_t)congested) < 0)
+    goto cleanup;
+
+  if (run_task(send_ntf_pdu, wbuf) < 0)
+    goto cleanup;
+
+  return;
+cleanup:
+  cleanup_pdu_wbuf(wbuf);
+}
+
+static void
+client_batchscan_cfg_storage_cb(int client_if, int status)
+{
+  struct pdu_wbuf* wbuf;
+
+  wbuf = create_pdu_wbuf(4 + /* client */
+                         4, /* status */
+                         0, NULL);
+  if (!wbuf)
+    return;
+
+  init_pdu(&wbuf->buf.pdu, SERVICE_BT_GATT,
+           OPCODE_CLIENT_CONFIGURE_BATCHSCAN_NTF);
+  if (append_to_pdu(&wbuf->buf.pdu, "ii", (int32_t)client_if,
+                                          (int32_t)status) < 0)
+    goto cleanup;
+
+  if (run_task(send_ntf_pdu, wbuf) < 0)
+    goto cleanup;
+
+  return;
+cleanup:
+  cleanup_pdu_wbuf(wbuf);
+}
+
+static void
+client_batchscan_enb_disable_cb(int action, int client_if, int status)
+{
+  struct pdu_wbuf* wbuf;
+
+  wbuf = create_pdu_wbuf(4 + /* action */
+                         4 + /* client */
+                         4, /* status */
+                         0, NULL);
+  if (!wbuf)
+    return;
+
+  init_pdu(&wbuf->buf.pdu, SERVICE_BT_GATT,
+           OPCODE_CLIENT_ENABLE_BATCHSCAN_NTF);
+  if (append_to_pdu(&wbuf->buf.pdu, "iii", (int32_t)action,
+                                           (int32_t)client_if,
+                                           (int32_t)status) < 0)
+    goto cleanup;
+
+  if (run_task(send_ntf_pdu, wbuf) < 0)
+    goto cleanup;
+
+  return;
+cleanup:
+  cleanup_pdu_wbuf(wbuf);
+}
+
+static void
+client_batchscan_reports_cb(int client_if, int status, int report_format,
+                            int num_records, int data_len, uint8_t* rep_data)
+{
+  struct pdu_wbuf* wbuf;
+
+  wbuf = create_pdu_wbuf(4 + /* client */
+                         4 + /* status */
+                         4 + /* report format*/
+                         4 + /* number of records */
+                         4 + /* length */
+                         data_len, /* data */
+                         0, NULL);
+  if (!wbuf)
+    return;
+
+  init_pdu(&wbuf->buf.pdu,
+           SERVICE_BT_GATT,
+           OPCODE_CLIENT_BATCHSCAN_REPORTS_NTF);
+  if (append_to_pdu(&wbuf->buf.pdu, "iiiiim", (int32_t)client_if,
+                                              (int32_t)status,
+                                              (int32_t)report_format,
+                                              (int32_t)num_records,
+                                              (int32_t)data_len,
+                                              rep_data, (size_t)data_len) < 0)
+    goto cleanup;
+
+  if (run_task(send_ntf_pdu, wbuf) < 0)
+    goto cleanup;
+
+  return;
+cleanup:
+  cleanup_pdu_wbuf(wbuf);
+}
+
+static void
+client_batchscan_threshold_cb(int client_if)
+{
+  struct pdu_wbuf* wbuf;
+
+  wbuf = create_pdu_wbuf(4, /* client */
+                         0, NULL);
+  if (!wbuf)
+    return;
+
+  init_pdu(&wbuf->buf.pdu, SERVICE_BT_GATT, OPCODE_CLIENT_BATCHSCAN_THRESHOLD_NTF);
+  if (append_to_pdu(&wbuf->buf.pdu, "i", (int32_t)client_if) < 0)
+    goto cleanup;
+
+  if (run_task(send_ntf_pdu, wbuf) < 0)
+    goto cleanup;
+
+  return;
+cleanup:
+  cleanup_pdu_wbuf(wbuf);
+}
+
+static void
+client_track_adv_event_cb(int client_if, int filt_index, int addr_type,
+                          bt_bdaddr_t* bd_addr, int adv_state)
+{
+  struct pdu_wbuf* wbuf;
+
+  wbuf = create_pdu_wbuf(4 + /* client */
+                         4 + /* filter index */
+                         4 + /* address type */
+                         6 + /* address */
+                         4, /* adv state */
+                         0, NULL);
+  if (!wbuf)
+    return;
+
+  init_pdu(&wbuf->buf.pdu, SERVICE_BT_GATT,
+           OPCODE_CLIENT_TRACK_ADV_EVENT_NTF);
+  if ((append_to_pdu(&wbuf->buf.pdu, "iii", (int32_t)client_if,
+                                            (int32_t)filt_index,
+                                            (int32_t)addr_type) < 0) ||
+      (append_bt_bdaddr_t(&wbuf->buf.pdu, bd_addr) < 0) ||
+      (append_to_pdu(&wbuf->buf.pdu, "i", (int32_t)adv_state) < 0))
+    goto cleanup;
+
+  if (run_task(send_ntf_pdu, wbuf) < 0)
+    goto cleanup;
+
+  return;
+cleanup:
+  cleanup_pdu_wbuf(wbuf);
+}
+#endif
+
+static void
+server_register_server_cb(int status, int server_if,
+                          bt_uuid_t* app_uuid)
+{
+  struct pdu_wbuf* wbuf;
+
+  wbuf = create_pdu_wbuf(4 + /* status */
+                         4 + /* server */
+                         16, /* UUID */
+                         0, NULL);
+  if (!wbuf)
+    return;
+
+  init_pdu(&wbuf->buf.pdu, SERVICE_BT_GATT, OPCODE_SERVER_REGISTER_NTF);
+  if ((append_to_pdu(&wbuf->buf.pdu, "ii", (int32_t)status,
+                                           (int32_t)server_if) < 0) ||
+      (append_bt_uuid_t(&wbuf->buf.pdu, app_uuid) < 0))
+    goto cleanup;
+
+  if (run_task(send_ntf_pdu, wbuf) < 0)
+    goto cleanup;
+
+  return;
+cleanup:
+  cleanup_pdu_wbuf(wbuf);
+}
+
+static void
+server_connection_cb(int conn_id, int server_if, int connected,
+                     bt_bdaddr_t* bd_addr)
+{
+  struct pdu_wbuf* wbuf;
+
+  wbuf = create_pdu_wbuf(4 + /* connection ID */
+                         4 + /* server */
+                         4 + /* connected */
+                         6, /* address */
+                         0, NULL);
+  if (!wbuf)
+    return;
+
+  init_pdu(&wbuf->buf.pdu, SERVICE_BT_GATT, OPCODE_SERVER_CONNECTION_NTF);
+  if ((append_to_pdu(&wbuf->buf.pdu, "iii", (int32_t)conn_id,
+                                            (int32_t)server_if,
+                                            (int32_t)connected) < 0) ||
+      (append_bt_bdaddr_t(&wbuf->buf.pdu, bd_addr) < 0))
+    goto cleanup;
+
+  if (run_task(send_ntf_pdu, wbuf) < 0)
+    goto cleanup;
+
+  return;
+cleanup:
+  cleanup_pdu_wbuf(wbuf);
+}
+
+static void
+server_service_added_cb(int status, int server_if, btgatt_srvc_id_t *srvc_id,
+                        int srvc_handle)
+{
+  struct pdu_wbuf* wbuf;
+
+  wbuf = create_pdu_wbuf(4 + /* status */
+                         4 + /* server */
+                         18 + /* GATT service ID */
+                         4, /* service handle */
+                         0, NULL);
+  if (!wbuf)
+    return;
+
+  init_pdu(&wbuf->buf.pdu, SERVICE_BT_GATT, OPCODE_SERVER_SERVICE_ADDED_NTF);
+  if ((append_to_pdu(&wbuf->buf.pdu, "ii", (int32_t)status,
+                                           (int32_t)server_if) < 0) ||
+      (append_btgatt_srvc_id_t(&wbuf->buf.pdu, srvc_id) < 0) ||
+      (append_to_pdu(&wbuf->buf.pdu, "i", (int32_t)srvc_handle) < 0))
+    goto cleanup;
+
+  if (run_task(send_ntf_pdu, wbuf) < 0)
+    goto cleanup;
+
+  return;
+cleanup:
+  cleanup_pdu_wbuf(wbuf);
+}
+
+static void
+server_included_service_added_cb(int status, int server_if, int srvc_handle,
+                                 int incl_srvc_handle)
+{
+  struct pdu_wbuf* wbuf;
+
+  wbuf = create_pdu_wbuf(4 + /* status */
+                         4 + /* server */
+                         4 + /* service handle */
+                         4, /* included service handle */
+                         0, NULL);
+  if (!wbuf)
+    return;
+
+  init_pdu(&wbuf->buf.pdu, SERVICE_BT_GATT,
+           OPCODE_SERVER_INCLUDED_SERVICE_ADDED_NTF);
+  if (append_to_pdu(&wbuf->buf.pdu, "iiii", (int32_t)status,
+                                            (int32_t)server_if,
+                                            (int32_t)srvc_handle,
+                                            (int32_t)incl_srvc_handle) < 0)
+    goto cleanup;
+
+  if (run_task(send_ntf_pdu, wbuf) < 0)
+    goto cleanup;
+
+  return;
+cleanup:
+  cleanup_pdu_wbuf(wbuf);
+}
+
+static void
+server_characteristic_added_cb(int status, int server_if, bt_uuid_t* uuid,
+                               int srvc_handle, int char_handle)
+{
+  struct pdu_wbuf* wbuf;
+
+  wbuf = create_pdu_wbuf(4 + /* status */
+                         4 + /* server */
+                         16 + /* UUID */
+                         4 + /* service handle */
+                         4, /* characteristic handle */
+                         0, NULL);
+  if (!wbuf)
+    return;
+
+  init_pdu(&wbuf->buf.pdu, SERVICE_BT_GATT,
+           OPCODE_SERVER_CHARACTERISTIC_ADDED_NTF);
+  if ((append_to_pdu(&wbuf->buf.pdu, "ii", (int32_t)status,
+                                           (int32_t)server_if) < 0) ||
+      (append_bt_uuid_t(&wbuf->buf.pdu, uuid) < 0) ||
+      (append_to_pdu(&wbuf->buf.pdu, "ii", (int32_t)srvc_handle,
+                                           (int32_t)char_handle) < 0))
+    goto cleanup;
+
+  if (run_task(send_ntf_pdu, wbuf) < 0)
+    goto cleanup;
+
+  return;
+cleanup:
+  cleanup_pdu_wbuf(wbuf);
+}
+
+static void
+server_descriptor_added_cb(int status, int server_if, bt_uuid_t* uuid,
+                           int srvc_handle, int descr_handle)
+{
+  struct pdu_wbuf* wbuf;
+
+  wbuf = create_pdu_wbuf(4 + /* status */
+                         4 + /* server */
+                         16 + /* UUID */
+                         4 + /* service handle */
+                         4, /* description handle */
+                         0, NULL);
+  if (!wbuf)
+    return;
+
+  init_pdu(&wbuf->buf.pdu, SERVICE_BT_GATT,
+           OPCODE_SERVER_DESCRIPTOR_ADDED_NTF);
+  if ((append_to_pdu(&wbuf->buf.pdu, "ii", (int32_t)status,
+                                           (int32_t)server_if) < 0) ||
+      (append_bt_uuid_t(&wbuf->buf.pdu, uuid) < 0) ||
+      (append_to_pdu(&wbuf->buf.pdu, "ii", (int32_t)srvc_handle,
+                                           (int32_t)descr_handle) < 0))
+    goto cleanup;
+
+  if (run_task(send_ntf_pdu, wbuf) < 0)
+    goto cleanup;
+
+  return;
+cleanup:
+  cleanup_pdu_wbuf(wbuf);
+}
+
+static void
+server_service_started_cb(int status, int server_if, int srvc_handle)
+{
+  struct pdu_wbuf* wbuf;
+
+  wbuf = create_pdu_wbuf(4 + /* status */
+                         4 + /* server */
+                         4, /* service handle */
+                         0, NULL);
+  if (!wbuf)
+    return;
+
+  init_pdu(&wbuf->buf.pdu, SERVICE_BT_GATT,
+           OPCODE_SERVER_SERVICE_STARTED_NTF);
+  if (append_to_pdu(&wbuf->buf.pdu, "iii", (int32_t)status,
+                                           (int32_t)server_if,
+                                           (int32_t)srvc_handle) < 0)
+    goto cleanup;
+
+  if (run_task(send_ntf_pdu, wbuf) < 0)
+    goto cleanup;
+
+  return;
+cleanup:
+  cleanup_pdu_wbuf(wbuf);
+}
+
+static void
+server_service_stopped_cb(int status, int server_if, int srvc_handle)
+{
+  struct pdu_wbuf* wbuf;
+
+  wbuf = create_pdu_wbuf(4 + /* status */
+                         4 + /* server */
+                         4, /* service handle */
+                         0, NULL);
+  if (!wbuf)
+    return;
+
+  init_pdu(&wbuf->buf.pdu, SERVICE_BT_GATT,
+           OPCODE_SERVER_SERVICE_STOPPED_NTF);
+  if (append_to_pdu(&wbuf->buf.pdu, "iii", (int32_t)status,
+                                           (int32_t)server_if,
+                                           (int32_t)srvc_handle) < 0)
+    goto cleanup;
+
+  if (run_task(send_ntf_pdu, wbuf) < 0)
+    goto cleanup;
+
+  return;
+cleanup:
+  cleanup_pdu_wbuf(wbuf);
+}
+
+static void
+server_service_deleted_cb(int status, int server_if, int srvc_handle)
+{
+  struct pdu_wbuf* wbuf;
+
+  wbuf = create_pdu_wbuf(4 + /* status */
+                         4 + /* server */
+                         4, /* service handle */
+                         0, NULL);
+  if (!wbuf)
+    return;
+
+  init_pdu(&wbuf->buf.pdu, SERVICE_BT_GATT,
+           OPCODE_SERVER_SERVICE_DELETED_NTF);
+  if (append_to_pdu(&wbuf->buf.pdu, "iii", (int32_t)status,
+                                           (int32_t)server_if,
+                                           (int32_t)srvc_handle) < 0)
+    goto cleanup;
+
+  if (run_task(send_ntf_pdu, wbuf) < 0)
+    goto cleanup;
+
+  return;
+cleanup:
+  cleanup_pdu_wbuf(wbuf);
+}
+
+static void
+server_request_read_cb(int conn_id, int trans_id, bt_bdaddr_t* bd_addr,
+                       int attr_handle, int offset, bool is_long)
+{
+  struct pdu_wbuf* wbuf;
+
+  wbuf = create_pdu_wbuf(4 + /* connection ID */
+                         4 + /* trans ID */
+                         6 + /* address */
+                         4 + /* attribute handle */
+                         4 + /* offset */
+                         1, /* is long */
+                         0, NULL);
+  if (!wbuf)
+    return;
+
+  init_pdu(&wbuf->buf.pdu, SERVICE_BT_GATT,
+           OPCODE_SERVER_REQUEST_READ_NTF);
+  if ((append_to_pdu(&wbuf->buf.pdu, "ii", (int32_t)conn_id,
+                                           (int32_t)trans_id) < 0) ||
+      (append_bt_bdaddr_t(&wbuf->buf.pdu, bd_addr) < 0) ||
+      (append_to_pdu(&wbuf->buf.pdu, "iiC", (int32_t)attr_handle,
+                                            (int32_t)offset,
+                                            (uint8_t)is_long) < 0))
+    goto cleanup;
+
+  if (run_task(send_ntf_pdu, wbuf) < 0)
+    goto cleanup;
+
+  return;
+cleanup:
+  cleanup_pdu_wbuf(wbuf);
+}
+
+static void
+server_request_write_cb(int conn_id, int trans_id, bt_bdaddr_t* bd_addr,
+                        int attr_handle, int offset, int length,
+                        bool need_rsp, bool is_prep, uint8_t* value)
+{
+  struct pdu_wbuf* wbuf;
+
+  wbuf = create_pdu_wbuf(4 + /* connection ID */
+                         4 + /* trans ID */
+                         6 + /* address */
+                         4 + /* attribute handle */
+                         4 + /* offset */
+                         4 + /* length */
+                         1 + /* need response */
+                         1 + /* is prepare */
+                         length, /* value */
+                         0, NULL);
+  if (!wbuf)
+    return;
+
+  init_pdu(&wbuf->buf.pdu, SERVICE_BT_GATT,
+           OPCODE_SERVER_REQUEST_WRITE_NTF);
+  if ((append_to_pdu(&wbuf->buf.pdu, "ii", (int32_t)conn_id,
+                                           (int32_t)trans_id) < 0) ||
+      (append_bt_bdaddr_t(&wbuf->buf.pdu, bd_addr) < 0) ||
+      (append_to_pdu(&wbuf->buf.pdu, "iiiCCm", (int32_t)attr_handle,
+                                               (int32_t)offset,
+                                               (int32_t)length,
+                                               (uint8_t)need_rsp,
+                                               (uint8_t)is_prep,
+                                               value,
+                                               (size_t)length) < 0))
+    goto cleanup;
+
+  if (run_task(send_ntf_pdu, wbuf) < 0)
+    goto cleanup;
+
+  return;
+cleanup:
+  cleanup_pdu_wbuf(wbuf);
+}
+
+static void
+server_request_exec_write_cb(int conn_id, int trans_id, bt_bdaddr_t* bd_addr,
+                             int exec_write)
+{
+  struct pdu_wbuf* wbuf;
+
+  wbuf = create_pdu_wbuf(4 + /* connection ID */
+                         4 + /* trans ID */
+                         6 + /* address */
+                         4, /* execute write */
+                         0, NULL);
+  if (!wbuf)
+    return;
+
+  init_pdu(&wbuf->buf.pdu, SERVICE_BT_GATT,
+           OPCODE_SERVER_REQUEST_EXECUTE_WRITE_NTF);
+  if ((append_to_pdu(&wbuf->buf.pdu, "ii", (int32_t)conn_id,
+                                           (int32_t)trans_id) < 0) ||
+      (append_bt_bdaddr_t(&wbuf->buf.pdu, bd_addr) < 0) ||
+      (append_to_pdu(&wbuf->buf.pdu, "i", (int32_t)exec_write) < 0))
+    goto cleanup;
+
+  if (run_task(send_ntf_pdu, wbuf) < 0)
+    goto cleanup;
+
+  return;
+cleanup:
+  cleanup_pdu_wbuf(wbuf);
+}
+
+static void
+server_response_confirmation_cb(int status, int handle)
+{
+  struct pdu_wbuf* wbuf;
+
+  wbuf = create_pdu_wbuf(4 + /* status */
+                         4, /* handle */
+                         0, NULL);
+  if (!wbuf)
+    return;
+
+  init_pdu(&wbuf->buf.pdu, SERVICE_BT_GATT,
+           OPCODE_SERVER_RESPONSE_CONFIRMATION_NTF);
+  if (append_to_pdu(&wbuf->buf.pdu, "ii", (int32_t)status,
+                                          (int32_t)handle) < 0)
+    goto cleanup;
+
+  if (run_task(send_ntf_pdu, wbuf) < 0)
+    goto cleanup;
+
+  return;
+cleanup:
+  cleanup_pdu_wbuf(wbuf);
+}
+
+#if ANDROID_VERSION >= 21
+static void
+server_indication_sent_cb(int conn_id, int status)
+{
+  struct pdu_wbuf* wbuf;
+
+  wbuf = create_pdu_wbuf(4 + /* connection ID */
+                         4, /* status */
+                         0, NULL);
+  if (!wbuf)
+    return;
+
+  init_pdu(&wbuf->buf.pdu, SERVICE_BT_GATT,
+           OPCODE_SERVER_INDICATION_SENT_NTF);
+  if (append_to_pdu(&wbuf->buf.pdu, "ii", (int32_t)conn_id,
+                                          (int32_t)status) < 0)
+    goto cleanup;
+
+  if (run_task(send_ntf_pdu, wbuf) < 0)
+    goto cleanup;
+
+  return;
+cleanup:
+  cleanup_pdu_wbuf(wbuf);
+}
+
+static void
+server_congestion_cb(int conn_id, bool congested)
+{
+  struct pdu_wbuf* wbuf;
+
+  wbuf = create_pdu_wbuf(4 + /* connection ID */
+                         1, /* congested */
+                         0, NULL);
+  if (!wbuf)
+    return;
+
+  init_pdu(&wbuf->buf.pdu, SERVICE_BT_GATT,
+           OPCODE_SERVER_CONGESTION_NTF);
+  if (append_to_pdu(&wbuf->buf.pdu, "iC", (int32_t)conn_id,
+                                          (uint8_t)congested) < 0)
+    goto cleanup;
+
+  if (run_task(send_ntf_pdu, wbuf) < 0)
+    goto cleanup;
+
+  return;
+cleanup:
+  cleanup_pdu_wbuf(wbuf);
+}
+#endif
+
+#if ANDROID_VERSION >= 22
+static void
+server_mtu_changed_cb(int conn_id, int mtu)
+{
+  struct pdu_wbuf* wbuf;
+
+  wbuf = create_pdu_wbuf(4 + /* connection ID */
+                         4, /* MTU */
+                         0, NULL);
+  if (!wbuf)
+    return;
+
+  init_pdu(&wbuf->buf.pdu, SERVICE_BT_GATT,
+           OPCODE_SERVER_MTU_CHANGED_NTF);
+  if (append_to_pdu(&wbuf->buf.pdu, "ii", (int32_t)conn_id,
+                                          (int32_t)mtu) < 0)
+    goto cleanup;
+
+  if (run_task(send_ntf_pdu, wbuf) < 0)
+    goto cleanup;
+
+  return;
+cleanup:
+  cleanup_pdu_wbuf(wbuf);
+}
+#endif
 
 /*
  * Commands/Responses
@@ -168,9 +1602,65 @@ bt_status_t
                    unsigned long max_num_clients ATTRIBS(UNUSED),
                    void (*send_pdu_cb)(struct pdu_wbuf*)))(const struct pdu*)
 {
-  static btgatt_client_callbacks_t btgatt_client_callbacks;
+  static btgatt_client_callbacks_t btgatt_client_callbacks = {
+    .register_client_cb = client_register_client_cb,
+    .scan_result_cb = client_scan_result_cb,
+    .open_cb = client_open_cb,
+    .close_cb = client_close_cb,
+    .search_complete_cb = client_search_complete_cb,
+    .search_result_cb = client_search_result_cb,
+    .get_characteristic_cb = client_get_characteristic_cb,
+    .get_descriptor_cb = client_get_descriptor_cb,
+    .get_included_service_cb = client_get_included_service_cb,
+    .register_for_notification_cb = client_register_for_notification_cb,
+    .notify_cb = client_notify_cb,
+    .read_characteristic_cb = client_read_characteristic_cb,
+    .write_characteristic_cb = client_write_characteristic_cb,
+    .read_descriptor_cb = client_read_descriptor_cb,
+    .write_descriptor_cb = client_write_descriptor_cb,
+    .execute_write_cb = client_execute_write_cb,
+    .read_remote_rssi_cb = client_read_remote_rssi_cb,
+    .listen_cb = client_listen_cb,
+#if ANDROID_VERSION >= 21
+    .configure_mtu_cb = client_configure_mtu_cb,
+    .scan_filter_cfg_cb = client_scan_filter_cfg_cb,
+    .scan_filter_param_cb = client_scan_filter_param_cb,
+    .scan_filter_status_cb = client_scan_filter_status_cb,
+    .multi_adv_enable_cb = client_multi_adv_enable_cb,
+    .multi_adv_update_cb = client_multi_adv_update_cb,
+    .multi_adv_data_cb = client_multi_adv_data_cb,
+    .multi_adv_disable_cb = client_multi_adv_disable_cb,
+    .congestion_cb = client_congestion_cb,
+    .batchscan_cfg_storage_cb = client_batchscan_cfg_storage_cb,
+    .batchscan_enb_disable_cb = client_batchscan_enb_disable_cb,
+    .batchscan_reports_cb = client_batchscan_reports_cb,
+    .batchscan_threshold_cb = client_batchscan_threshold_cb,
+    .track_adv_event_cb = client_track_adv_event_cb
+#endif
+  };
 
-  static btgatt_server_callbacks_t btgatt_server_callbacks;
+  static btgatt_server_callbacks_t btgatt_server_callbacks = {
+    .register_server_cb = server_register_server_cb,
+    .connection_cb = server_connection_cb,
+    .service_added_cb = server_service_added_cb,
+    .included_service_added_cb = server_included_service_added_cb,
+    .characteristic_added_cb = server_characteristic_added_cb,
+    .descriptor_added_cb = server_descriptor_added_cb,
+    .service_started_cb = server_service_started_cb,
+    .service_stopped_cb = server_service_stopped_cb,
+    .service_deleted_cb = server_service_deleted_cb,
+    .request_read_cb = server_request_read_cb,
+    .request_write_cb = server_request_write_cb,
+    .request_exec_write_cb = server_request_exec_write_cb,
+    .response_confirmation_cb = server_response_confirmation_cb,
+#if ANDROID_VERSION >= 21
+    .indication_sent_cb = server_indication_sent_cb,
+    .congestion_cb = server_congestion_cb,
+#endif
+#if ANDROID_VERSION >= 22
+    .mtu_changed_cb = server_mtu_changed_cb
+#endif
+  };
 
   static btgatt_callbacks_t btgatt_callbacks = {
     .size = sizeof(btgatt_callbacks),
