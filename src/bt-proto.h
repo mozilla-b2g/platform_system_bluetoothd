@@ -25,7 +25,8 @@ enum {
   SERVICE_BT_SOCK = 0x02,
   SERVICE_BT_HF = 0x05,
   SERVICE_BT_AV = 0x06,
-  SERVICE_BT_RC = 0x08
+  SERVICE_BT_RC = 0x08,
+  SERVICE_BT_GATT = 0x09
 };
 
 struct pdu {

@@ -8,7 +8,8 @@ bluetoothd_SRC_FILES_17 := bt-av-io.c \
                            bt-sock-io.c
 bluetoothd_SRC_FILES_18 := $(bluetoothd_SRC_FILES_17) \
                            bt-rc-io.c
-bluetoothd_SRC_FILES_19 := $(bluetoothd_SRC_FILES_18)
+bluetoothd_SRC_FILES_19 := $(bluetoothd_SRC_FILES_18) \
+                           bt-gatt-io.c
 bluetoothd_SRC_FILES_20 := $(bluetoothd_SRC_FILES_19)
 bluetoothd_SRC_FILES_21 := $(bluetoothd_SRC_FILES_20)
 bluetoothd_SRC_FILES_22 := $(bluetoothd_SRC_FILES_21)
