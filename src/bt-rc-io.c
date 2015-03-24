@@ -14,12 +14,14 @@
  * limitations under the License.
  */
 
+#if ANDROID_VERSION < 18
+#error AVRCP support requires an Android SDK version of 18 or later
+#endif
+
 #include <assert.h>
 #include <fdio/task.h>
 #include <hardware/bluetooth.h>
-#if ANDROID_VERSION >= 18
 #include <hardware/bt_rc.h>
-#endif
 #include "compiler.h"
 #include "log.h"
 #include "bt-proto.h"
@@ -27,7 +29,6 @@
 #include "bt-core-io.h"
 #include "bt-rc-io.h"
 
-#if ANDROID_VERSION >= 18
 enum {
   /* commands/responses */
   OPCODE_GET_PLAY_STATUS_RSP = 0x01,
@@ -88,7 +89,6 @@ send_ntf_pdu(void* data)
  * Protocol helpers
  */
 
-#if ANDROID_VERSION >= 18
 long
 read_btrc_player_attr_t(const struct pdu* pdu, unsigned long off,
                         btrc_player_attr_t* attr)
@@ -314,7 +314,6 @@ append_btrc_player_settings_t(struct pdu* pdu,
 
   return off;
 }
-#endif
 
 /*
  * Notifications
@@ -1011,7 +1010,6 @@ bt_rc_handler(const struct pdu* cmd)
 
   return handle_pdu_by_opcode(cmd, handler);
 }
-#endif
 
 bt_status_t
 (*register_bt_rc(
@@ -1019,7 +1017,6 @@ bt_status_t
   unsigned long max_num_clients ATTRIBS(UNUSED),
   void (*send_pdu_cb)(struct pdu_wbuf*) ATTRIBS(UNUSED)))(const struct pdu*)
 {
-#if ANDROID_VERSION >= 18
   static btrc_callbacks_t btrc_callbacks = {
     .size = sizeof(btrc_callbacks),
 #if ANDROID_VERSION >= 19
@@ -1064,21 +1061,16 @@ bt_status_t
   send_pdu = send_pdu_cb;
 
   return bt_rc_handler;
-#else
-  return NULL;
-#endif
 }
 
 int
 unregister_bt_rc()
 {
-#if ANDROID_VERSION >= 18
   assert(btrc_interface);
   assert(btrc_interface->cleanup);
 
   btrc_interface->cleanup();
   btrc_interface = NULL;
-#endif
 
   return 0;
 }

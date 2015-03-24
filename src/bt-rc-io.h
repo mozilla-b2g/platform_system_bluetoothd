@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2014  Mozilla Foundation
+ * Copyright (C) 2014-2015  Mozilla Foundation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,6 +16,8 @@
 
 #pragma once
 
+#if ANDROID_VERSION >= 18
+
 #include <hardware/bluetooth.h>
 
 struct pdu;
@@ -28,3 +30,9 @@ bt_status_t
 int
 unregister_bt_rc(void);
 
+#else
+
+#define register_bt_rc  NULL
+#define unregister_bt_rc  NULL
+
+#endif
