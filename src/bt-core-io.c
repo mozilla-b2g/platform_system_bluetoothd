@@ -482,6 +482,7 @@ energy_info_cb(bt_activity_energy_info *energy_info ATTRIBS(UNUSED))
 }
 
 struct wake_alarm_param {
+  struct fd_events evfuncs;
   int clockid;
   unsigned long long timeout_ms;
   unsigned long long interval_ms;
@@ -508,21 +509,6 @@ alarm_event_in(int fd, void* data)
 }
 
 static enum ioresult
-alarm_event(int fd, uint32_t events, void* data)
-{
-  enum ioresult res;
-
-  if (events & EPOLLIN) {
-    res = alarm_event_in(fd, data);
-  } else {
-    ALOGW("unsupported event mask: %u", events);
-    res = IO_OK;
-  }
-
-  return res;
-}
-
-static enum ioresult
 set_wake_alarm_task_cb(void* data)
 {
   struct wake_alarm_param* param = data;
@@ -530,8 +516,8 @@ set_wake_alarm_task_cb(void* data)
   assert(param);
 
   if (add_relative_timer_to_epoll_loop(param->clockid, param->timeout_ms,
-                                       param->interval_ms, alarm_event,
-                                       param) < 0)
+                                       param->interval_ms, fd_events_handler,
+                                       &param->evfuncs) < 0)
     goto err_add_relative_timer_to_epoll_loop;
 
   return IO_OK;
@@ -551,6 +537,9 @@ set_wake_alarm_cb(uint64_t delay_millis, bool should_wake, alarm_cb cb,
     ALOGE_ERRNO("malloc");
     return false;
   }
+  memset(&param->evfuncs, 0, sizeof(param->evfuncs));
+  param->evfuncs.data = param;
+  param->evfuncs.epollin = alarm_event_in;
   param->clockid = should_wake ? CLOCK_BOOTTIME_ALARM : CLOCK_BOOTTIME;
   param->timeout_ms = delay_millis;
   param->interval_ms = 0;

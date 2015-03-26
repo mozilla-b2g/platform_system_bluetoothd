@@ -41,18 +41,13 @@
  * Socket I/O
  */
 
-static enum ioresult
-io_fd0_event(int fd, uint32_t events, void* data);
-
-static enum ioresult
-io_fd1_event(int fd, uint32_t events, void* data);
-
 STAILQ_HEAD(pdu_wbuf_stailq, pdu_wbuf);
 
 struct io_state {
   int fd;
   uint32_t epoll_events;
-  enum ioresult (*epoll_func)(int, uint32_t, void*);
+  struct fd_events evfuncs;
+  int (*handle_pdu)(const struct pdu* cmd);
   struct pdu_rbuf* rbuf;
   struct pdu_wbuf_stailq sendq;
 };
@@ -89,14 +84,14 @@ io_state_hup(struct io_state* io_state)
 }
 
 static int
-io_state_in(struct io_state* io_state, int (*handle_pdu)(const struct pdu*))
+io_state_in(struct io_state* io_state)
 {
   struct iovec iv;
   struct msghdr msg;
   ssize_t res;
 
   assert(io_state);
-  assert(handle_pdu);
+  assert(io_state->handle_pdu);
 
   acquire_wake_lock(PARTIAL_WAKE_LOCK, WAKE_LOCK_NAME);
 
@@ -118,9 +113,9 @@ io_state_in(struct io_state* io_state, int (*handle_pdu)(const struct pdu*))
     io_state->epoll_events &= ~EPOLLIN;
 
     if (io_state->epoll_events) {
-      res = add_fd_to_epoll_loop(io_state->fd,
-                                 io_state->epoll_events,
-                                 io_state->epoll_func, io_state);
+      res = add_fd_events_to_epoll_loop(io_state->fd,
+                                        io_state->epoll_events,
+                                        &io_state->evfuncs);
       if (res < 0)
         goto err_add_fd_to_epoll_loop;
     } else {
@@ -131,7 +126,7 @@ io_state_in(struct io_state* io_state, int (*handle_pdu)(const struct pdu*))
   io_state->rbuf->len = res;
 
   if (pdu_rbuf_has_pdu(io_state->rbuf)) {
-    if (handle_pdu(&io_state->rbuf->buf.pdu) < 0)
+    if (io_state->handle_pdu(&io_state->rbuf->buf.pdu) < 0)
       goto err_pdu;
     io_state->rbuf->len = 0;
   } else if (pdu_rbuf_is_full(io_state->rbuf)) {
@@ -174,9 +169,9 @@ io_state_out(struct io_state* io_state)
     io_state->epoll_events &= ~EPOLLOUT;
 
     if (io_state->epoll_events) {
-      res = add_fd_to_epoll_loop(io_state->fd,
-                                 io_state->epoll_events,
-                                 io_state->epoll_func, io_state);
+      res = add_fd_events_to_epoll_loop(io_state->fd,
+                                        io_state->epoll_events,
+                                        &io_state->evfuncs);
       if (res < 0)
         goto err_add_fd_to_epoll_loop;
     } else {
@@ -204,8 +199,8 @@ io_state_send(struct io_state* io_state, struct pdu_wbuf* wbuf)
 
   epoll_events = io_state->epoll_events | EPOLLOUT;
 
-  res = add_fd_to_epoll_loop(io_state->fd, epoll_events,
-                             io_state->epoll_func, io_state);
+  res = add_fd_events_to_epoll_loop(io_state->fd, epoll_events,
+                                    &io_state->evfuncs);
   if (res < 0)
     goto err_add_fd_to_epoll_loop;
 
@@ -216,52 +211,6 @@ err_add_fd_to_epoll_loop:
   STAILQ_REMOVE(&io_state->sendq, wbuf, pdu_wbuf, stailq);
   cleanup_pdu_wbuf(wbuf);
   return -1;
-}
-
-#define IO_STATE_INITIALIZER(_io_state, _epoll_func) \
-  { \
-    .fd = -1, \
-    .epoll_events = 0, \
-    .epoll_func = (_epoll_func), \
-    .rbuf = NULL, \
-    STAILQ_HEAD_INITIALIZER((_io_state).sendq) \
-  }
-
-static struct io_state io_state[2] = {
-  IO_STATE_INITIALIZER(io_state[0], io_fd0_event),
-  IO_STATE_INITIALIZER(io_state[1], io_fd1_event)
-};
-
-static void
-send_pdu(struct pdu_wbuf* wbuf)
-{
-  unsigned int i;
-
-  i = !!(wbuf->buf.pdu.opcode & 0x80); /* 1 for notifications, 0 otherwise */
-
-  io_state_send(io_state + i, wbuf);
-}
-
-static int
-handle_pdu(const struct pdu* cmd)
-{
-  bt_status_t status;
-  struct pdu_wbuf* wbuf;
-
-  status = handle_pdu_by_service(cmd, service_handler);
-  if (status != BT_STATUS_SUCCESS)
-    goto err_handle_pdu_by_service;
-
-  return 0;
-err_handle_pdu_by_service:
-  /* reply with an error */
-  wbuf = create_pdu_wbuf(1, 0, NULL);
-  if (!wbuf)
-    return -1;
-  init_pdu(&wbuf->buf.pdu, cmd->service, 0);
-  append_to_pdu(&wbuf->buf.pdu, "C", (uint8_t)status);
-  send_pdu(wbuf);
-  return 0; /* signal success because we replied with an error */
 }
 
 static enum ioresult
@@ -304,7 +253,7 @@ io_fd_event_in(int fd ATTRIBS(UNUSED), void* data)
   io_state = data;
   assert(io_state->fd == fd);
 
-  if (io_state_in(io_state, handle_pdu) < 0)
+  if (io_state_in(io_state) < 0)
     return IO_ABORT;
 
   return IO_OK;
@@ -326,61 +275,61 @@ io_fd_event_out(int fd ATTRIBS(UNUSED), void* data)
   return IO_OK;
 }
 
-/* Command socket
- */
-
-/* The function |io_fd0_event| handles the command/response file
- * descriptor. It supports IN and OUT events for receiving and
- * sending PDUs. HUP and ERROR are always handled.
- */
-static enum ioresult
-io_fd0_event(int fd, uint32_t events, void* data)
-{
-  enum ioresult res;
-
-  if (events & EPOLLERR) {
-    res = io_fd_event_err(fd, data);
-  } else if (events & EPOLLHUP) {
-    res = io_fd_event_hup(fd, data);
-  } else if (events & EPOLLIN) {
-    res = io_fd_event_in(fd, data);
-  } else if (events & EPOLLOUT) {
-    res = io_fd_event_out(fd, data);
-  } else {
-    ALOGW("unsupported event mask: %u", events);
-    res = IO_OK;
+#define IO_STATE_INITIALIZER(_io_state) \
+  { \
+    .fd = -1, \
+    .epoll_events = 0, \
+    .evfuncs = { \
+      .data = NULL, \
+      .epollin = io_fd_event_in, \
+      .epollout = io_fd_event_out, \
+      .epollerr = io_fd_event_err, \
+      .epollhup = io_fd_event_hup \
+    }, \
+    .handle_pdu = NULL, \
+    .rbuf = NULL, \
+    STAILQ_HEAD_INITIALIZER((_io_state).sendq) \
   }
-  return res;
+
+static struct io_state io_state[2] = {
+  IO_STATE_INITIALIZER(io_state[0]),
+  IO_STATE_INITIALIZER(io_state[1])
+};
+
+static void
+send_pdu(struct pdu_wbuf* wbuf)
+{
+  unsigned int i;
+
+  i = !!(wbuf->buf.pdu.opcode & 0x80); /* 1 for notifications, 0 otherwise */
+
+  io_state_send(io_state + i, wbuf);
 }
 
-/* Notification socket
- */
-
-/* The function |io_fd1_event| handles the notification file
- * descriptor. We only send on this file descriptor, so the
- * function only supports OUT events for sending PDUs. HUP
- * and ERROR are always handled.
- */
-static enum ioresult
-io_fd1_event(int fd, uint32_t events, void* data)
+static int
+handle_pdu(const struct pdu* cmd)
 {
-  enum ioresult res;
+  bt_status_t status;
+  struct pdu_wbuf* wbuf;
 
-  if (events & EPOLLERR) {
-    res = io_fd_event_err(fd, data);
-  } else if (events & EPOLLHUP) {
-    res = io_fd_event_hup(fd, data);
-  } else if (events & EPOLLOUT) {
-    res = io_fd_event_out(fd, data);
-  } else {
-    ALOGW("unsupported event mask: %u", events);
-    res = IO_OK;
-  }
-  return res;
+  status = handle_pdu_by_service(cmd, service_handler);
+  if (status != BT_STATUS_SUCCESS)
+    goto err_handle_pdu_by_service;
+
+  return 0;
+err_handle_pdu_by_service:
+  /* reply with an error */
+  wbuf = create_pdu_wbuf(1, 0, NULL);
+  if (!wbuf)
+    return -1;
+  init_pdu(&wbuf->buf.pdu, cmd->service, 0);
+  append_to_pdu(&wbuf->buf.pdu, "C", (uint8_t)status);
+  send_pdu(wbuf);
+  return 0; /* signal success because we replied with an error */
 }
 
 /*
- * Listening socket I/O
+ * Connection setup
  */
 
 static int
@@ -449,7 +398,9 @@ fd_event_err(int fd ATTRIBS(UNUSED), void* data ATTRIBS(UNUSED))
   return IO_ABORT;
 }
 
-/* The first connected socket is for pairs of command/respond PDUs.
+/* The first connected socket is for pairs of command/response PDUs. It
+ * supports IN and OUT events for receiving and sending PDUs. HUP and
+ * ERROR are always handled.
  */
 static enum ioresult
 connected_cmd_socket(int fd)
@@ -471,7 +422,9 @@ connected_cmd_socket(int fd)
   return IO_OK;
 }
 
-/* The second connected socket is for notifications.
+/* The second connected socket is for notifications. We only send on
+ * this file descriptor, so the function only supports OUT events for
+ * sending PDUs. HUP and ERROR are always handled.
  */
 static enum ioresult
 connected_ntf_socket(int fd)
@@ -498,25 +451,25 @@ start_main_loop(void)
 
   /* Start polling command socket */
 
-  res = add_fd_to_epoll_loop(io_state[0].fd, io_state[0].epoll_events,
-                             io_fd0_event, io_state + 0);
+  res = add_fd_events_to_epoll_loop(io_state[0].fd, io_state[0].epoll_events,
+                                    &io_state[0].evfuncs);
   if (res < 0) {
-    goto err_add_fd_to_epoll_loop_0;
+    goto err_add_fd_events_to_epoll_loop_0;
   }
 
   /* Start polling notification socket */
 
-  res = add_fd_to_epoll_loop(io_state[1].fd, io_state[1].epoll_events,
-                             io_fd1_event, io_state + 1);
+  res = add_fd_events_to_epoll_loop(io_state[1].fd, io_state[1].epoll_events,
+                                    &io_state[1].evfuncs);
   if (res < 0) {
-    goto err_add_fd_to_epoll_loop_1;
+    goto err_add_fd_events_to_epoll_loop_1;
   }
 
   return 0;
 
-err_add_fd_to_epoll_loop_1:
+err_add_fd_events_to_epoll_loop_1:
   remove_fd_from_epoll_loop(io_state[0].fd);
-err_add_fd_to_epoll_loop_0:
+err_add_fd_events_to_epoll_loop_0:
   uninit_core_io();
   return -1;
 }
@@ -564,29 +517,16 @@ fd_event_out(int fd, void* data)
   return res;
 }
 
-/* |fd_event| handles accepted connection requests. ERR is always handled.
- */
-static enum ioresult
-fd_event(int fd, uint32_t events, void* data)
-{
-  enum ioresult res;
-
-  if (events & EPOLLERR) {
-    res = fd_event_err(fd, data);
-  } else if (events & EPOLLOUT) {
-    res = fd_event_out(fd, data);
-  } else {
-    ALOGW("unsupported event mask: %u", events);
-    res = IO_OK;
-  }
-
-  return res;
-}
-
 int
 init_bt_io(const char* socket_name)
 {
   static unsigned long remaining_fds = (unsigned long)ARRAY_LENGTH(io_state);
+
+  static struct fd_events evfuncs = {
+    .data = &remaining_fds,
+    .epollout = fd_event_out,
+    .epollin = fd_event_err
+  };
 
   int fd, res;
 
@@ -595,20 +535,23 @@ init_bt_io(const char* socket_name)
    * second is for notifications.
    */
 
-  fd = connect_socket(socket_name, fd_event, &remaining_fds);
+  fd = connect_socket(socket_name, fd_events_handler, &evfuncs);
   if (fd < 0)
     return -1;
 
   io_state[0].fd = fd;
   io_state[0].epoll_events = 0;
+  io_state[0].evfuncs.data = &io_state[0];
+  io_state[0].handle_pdu = handle_pdu;
   io_state[0].rbuf = NULL;
 
-  fd = connect_socket(socket_name, fd_event, &remaining_fds);
+  fd = connect_socket(socket_name, fd_events_handler, &evfuncs);
   if (fd < 0)
     goto err_connect_socket;
 
   io_state[1].fd = fd;
   io_state[1].epoll_events = 0;
+  io_state[1].evfuncs.data = &io_state[1];
   io_state[1].rbuf = NULL;
 
   return 0;
