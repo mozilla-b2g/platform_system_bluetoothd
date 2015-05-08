@@ -28,6 +28,7 @@
 #include "bt-pdubuf.h"
 #include "bt-core-io.h"
 #include "bt-gatt-io.h"
+#include "version.h"
 
 enum {
   /* commands/responses */
@@ -159,6 +160,55 @@ send_ntf_pdu(void* data)
  */
 
 static long
+read_btgatt_gatt_id_t(const struct pdu* pdu, unsigned long offset,
+                      btgatt_gatt_id_t* gatt_id)
+{
+  long off = read_bt_uuid_t(pdu, offset, &gatt_id->uuid);
+  if (off < 0) {
+    return -1;
+  }
+  return read_pdu_at(pdu, off, "C", &gatt_id->inst_id);
+}
+
+static long
+read_btgatt_srvc_id_t(const struct pdu* pdu, unsigned long offset,
+                      btgatt_srvc_id_t* srvc_id)
+{
+  long off = read_btgatt_gatt_id_t(pdu, offset, &srvc_id->id);
+  if (off < 0) {
+    return -1;
+  }
+  return read_pdu_at(pdu, off, "C", &srvc_id->is_primary);
+}
+
+static long
+read_btgatt_test_params_t(const struct pdu* pdu, unsigned long offset,
+                          btgatt_test_params_t* params)
+{
+  params->bda1 = malloc(sizeof(params->bda1));
+  if (!params->bda1) {
+    ALOGE_ERRNO("malloc");
+    return -1;
+  }
+  params->uuid1 = malloc(sizeof(params->uuid1));
+  if (!params->uuid1) {
+    ALOGE_ERRNO("malloc");
+    return -1;
+  }
+  long off = read_bt_bdaddr_t(pdu, offset, params->bda1);
+  if (off < 0) {
+    return -1;
+  }
+  off = read_bt_uuid_t(pdu, off, params->uuid1);
+  if (off < 0) {
+    return -1;
+  }
+  return read_pdu_at(pdu, off, "SSSSS", &params->u1, &params->u2,
+                                        &params->u3, &params->u4,
+                                        &params->u5);
+}
+
+static long
 append_btgatt_gatt_id_t(struct pdu* pdu, const btgatt_gatt_id_t* gatt_id)
 {
   if (append_bt_uuid_t(pdu, &gatt_id->uuid) < 0)
@@ -215,6 +265,13 @@ append_btgatt_write_params_t(struct pdu* pdu,
       (append_btgatt_gatt_id_t(pdu, &params->descr_id) < 0))
     return -1;
   return append_to_pdu(pdu, "C", params->status);
+}
+
+static void
+cleanup_btgatt_test_params_t(btgatt_test_params_t* params)
+{
+  free(params->bda1);
+  free(params->uuid1);
 }
 
 /*
@@ -1589,9 +1646,2401 @@ cleanup:
  */
 
 static bt_status_t
+opcode_client_register(const struct pdu* cmd)
+{
+  bt_uuid_t uuid;
+  struct pdu_wbuf* wbuf;
+  bt_status_t status;
+
+  assert(btgatt_interface);
+  assert(btgatt_interface->client);
+  assert(btgatt_interface->client->register_client);
+
+  if (read_bt_uuid_t(cmd, 0, &uuid) < 0) {
+    return BT_STATUS_PARM_INVALID;
+  }
+  wbuf = create_pdu_wbuf(0, 0, NULL);
+  if (!wbuf) {
+    return BT_STATUS_NOMEM;
+  }
+  status = btgatt_interface->client->register_client(&uuid);
+  if (status != BT_STATUS_SUCCESS) {
+    goto err_btgatt_interface_client_register_client;
+  }
+  init_pdu(&wbuf->buf.pdu, cmd->service, cmd->opcode);
+  send_pdu(wbuf);
+
+  return BT_STATUS_SUCCESS;
+err_btgatt_interface_client_register_client:
+  cleanup_pdu_wbuf(wbuf);
+  return status;
+}
+
+static bt_status_t
+opcode_client_unregister(const struct pdu* cmd)
+{
+  int32_t client_if;
+  struct pdu_wbuf* wbuf;
+  bt_status_t status;
+
+  assert(btgatt_interface);
+  assert(btgatt_interface->client);
+  assert(btgatt_interface->client->unregister_client);
+
+  if (read_pdu_at(cmd, 0, "i", &client_if) < 0) {
+    return BT_STATUS_PARM_INVALID;
+  }
+  wbuf = create_pdu_wbuf(0, 0, NULL);
+  if (!wbuf) {
+    return BT_STATUS_NOMEM;
+  }
+  status = btgatt_interface->client->unregister_client(client_if);
+  if (status != BT_STATUS_SUCCESS) {
+    goto err_btgatt_interface_client_unregister_client;
+  }
+  init_pdu(&wbuf->buf.pdu, cmd->service, cmd->opcode);
+  send_pdu(wbuf);
+
+  return BT_STATUS_SUCCESS;
+err_btgatt_interface_client_unregister_client:
+  cleanup_pdu_wbuf(wbuf);
+  return status;
+}
+
+static bt_status_t
+opcode_client_scan(const struct pdu* cmd)
+{
+  int32_t client_if;
+  uint8_t start;
+  struct pdu_wbuf* wbuf;
+  bt_status_t status;
+
+  assert(btgatt_interface);
+  assert(btgatt_interface->client);
+  assert(btgatt_interface->client->scan);
+
+  if (read_pdu_at(cmd, 0, "iC", &client_if, &start) < 0) {
+    return BT_STATUS_PARM_INVALID;
+  }
+  wbuf = create_pdu_wbuf(0, 0, NULL);
+  if (!wbuf) {
+    return BT_STATUS_NOMEM;
+  }
+#if ANDROID_VERSION >= 21
+  status = btgatt_interface->client->scan(start);
+#else
+  status = btgatt_interface->client->scan(client_if, start);
+#endif
+  if (status != BT_STATUS_SUCCESS) {
+    goto err_btgatt_interface_client_scan;
+  }
+  init_pdu(&wbuf->buf.pdu, cmd->service, cmd->opcode);
+  send_pdu(wbuf);
+
+  return BT_STATUS_SUCCESS;
+err_btgatt_interface_client_scan:
+  cleanup_pdu_wbuf(wbuf);
+  return status;
+}
+
+static bt_status_t
+opcode_client_connect_device(const struct pdu* cmd)
+{
+#if ANDROID_VERSION >= 21
+  long off;
+  int32_t client_if, transport;
+  bt_bdaddr_t bdaddr;
+  uint8_t is_direct;
+  struct pdu_wbuf* wbuf;
+  bt_status_t status;
+
+  assert(btgatt_interface);
+  assert(btgatt_interface->client);
+  assert(btgatt_interface->client->connect);
+
+  off = read_pdu_at(cmd, 0, "i", &client_if);
+  if (off < 0) {
+    return BT_STATUS_PARM_INVALID;
+  }
+  off = read_bt_bdaddr_t(cmd, off, &bdaddr);
+  if (off < 0) {
+    return BT_STATUS_PARM_INVALID;
+  }
+  if (read_pdu_at(cmd, off, "Ci", &is_direct, &transport) < 0) {
+    return BT_STATUS_PARM_INVALID;
+  }
+  wbuf = create_pdu_wbuf(0, 0, NULL);
+  if (!wbuf) {
+    return BT_STATUS_NOMEM;
+  }
+  status = btgatt_interface->client->connect(client_if, &bdaddr,
+                                             is_direct, transport);
+  if (status != BT_STATUS_SUCCESS) {
+    goto err_btgatt_interface_client_connect_device;
+  }
+  init_pdu(&wbuf->buf.pdu, cmd->service, cmd->opcode);
+  send_pdu(wbuf);
+
+  return BT_STATUS_SUCCESS;
+err_btgatt_interface_client_connect_device:
+  cleanup_pdu_wbuf(wbuf);
+  return status;
+#else
+  long off;
+  int32_t client_if;
+  bt_bdaddr_t bdaddr;
+  uint8_t is_direct;
+  struct pdu_wbuf* wbuf;
+  bt_status_t status;
+
+  assert(btgatt_interface);
+  assert(btgatt_interface->client);
+  assert(btgatt_interface->client->connect);
+
+  off = read_pdu_at(cmd, 0, "i", &client_if);
+  if (off < 0) {
+    return BT_STATUS_PARM_INVALID;
+  }
+  off = read_bt_bdaddr_t(cmd, off, &bdaddr);
+  if (off < 0) {
+    return BT_STATUS_PARM_INVALID;
+  }
+  if (read_pdu_at(cmd, off, "C", &is_direct) < 0) {
+    return BT_STATUS_PARM_INVALID;
+  }
+  wbuf = create_pdu_wbuf(0, 0, NULL);
+  if (!wbuf) {
+    return BT_STATUS_NOMEM;
+  }
+  status = btgatt_interface->client->connect(client_if, &bdaddr, is_direct);
+  if (status != BT_STATUS_SUCCESS) {
+    goto err_btgatt_interface_client_connect;
+  }
+  init_pdu(&wbuf->buf.pdu, cmd->service, cmd->opcode);
+  send_pdu(wbuf);
+
+  return BT_STATUS_SUCCESS;
+err_btgatt_interface_client_connect:
+  cleanup_pdu_wbuf(wbuf);
+  return status;
+#endif
+}
+
+static bt_status_t
+opcode_client_disconnect_device(const struct pdu* cmd)
+{
+  long off;
+  int32_t client_if, connid;
+  bt_bdaddr_t bdaddr;
+  struct pdu_wbuf* wbuf;
+  bt_status_t status;
+
+  assert(btgatt_interface);
+  assert(btgatt_interface->client);
+  assert(btgatt_interface->client->disconnect);
+
+  off = read_pdu_at(cmd, 0, "i", &client_if);
+  if (off < 0) {
+    return BT_STATUS_PARM_INVALID;
+  }
+  off = read_bt_bdaddr_t(cmd, off, &bdaddr);
+  if (off < 0) {
+    return BT_STATUS_PARM_INVALID;
+  }
+  if (read_pdu_at(cmd, off, "i", &connid) < 0) {
+    return BT_STATUS_PARM_INVALID;
+  }
+  wbuf = create_pdu_wbuf(0, 0, NULL);
+  if (!wbuf) {
+    return BT_STATUS_NOMEM;
+  }
+  status = btgatt_interface->client->disconnect(client_if, &bdaddr, connid);
+  if (status != BT_STATUS_SUCCESS) {
+    goto err_btgatt_interface_client_disconnect;
+  }
+  init_pdu(&wbuf->buf.pdu, cmd->service, cmd->opcode);
+  send_pdu(wbuf);
+
+  return BT_STATUS_SUCCESS;
+err_btgatt_interface_client_disconnect:
+  cleanup_pdu_wbuf(wbuf);
+  return status;
+}
+
+static bt_status_t
+opcode_client_listen(const struct pdu* cmd)
+{
+  int32_t client_if;
+  uint8_t start;
+  struct pdu_wbuf* wbuf;
+  bt_status_t status;
+
+  assert(btgatt_interface);
+  assert(btgatt_interface->client);
+  assert(btgatt_interface->client->listen);
+
+  if (read_pdu_at(cmd, 0, "iC", &client_if, &start) < 0) {
+    return BT_STATUS_PARM_INVALID;
+  }
+  wbuf = create_pdu_wbuf(0, 0, NULL);
+  if (!wbuf) {
+    return BT_STATUS_NOMEM;
+  }
+  status = btgatt_interface->client->listen(client_if, start);
+  if (status != BT_STATUS_SUCCESS) {
+    goto err_btgatt_interface_client_listen;
+  }
+  init_pdu(&wbuf->buf.pdu, cmd->service, cmd->opcode);
+  send_pdu(wbuf);
+
+  return BT_STATUS_SUCCESS;
+err_btgatt_interface_client_listen:
+  cleanup_pdu_wbuf(wbuf);
+  return status;
+}
+
+static bt_status_t
+opcode_client_refresh(const struct pdu* cmd)
+{
+  long off;
+  int32_t client_if;
+  bt_bdaddr_t bdaddr;
+  struct pdu_wbuf* wbuf;
+  bt_status_t status;
+
+  assert(btgatt_interface);
+  assert(btgatt_interface->client);
+  assert(btgatt_interface->client->refresh);
+
+  off = read_pdu_at(cmd, 0, "i", &client_if);
+  if (off < 0) {
+    return BT_STATUS_PARM_INVALID;
+  }
+  if (read_bt_bdaddr_t(cmd, off, &bdaddr) < 0) {
+    return BT_STATUS_PARM_INVALID;
+  }
+  wbuf = create_pdu_wbuf(0, 0, NULL);
+  if (!wbuf) {
+    return BT_STATUS_NOMEM;
+  }
+  status = btgatt_interface->client->refresh(client_if, &bdaddr);
+  if (status != BT_STATUS_SUCCESS) {
+    goto err_btgatt_interface_client_refresh;
+  }
+  init_pdu(&wbuf->buf.pdu, cmd->service, cmd->opcode);
+  send_pdu(wbuf);
+
+  return BT_STATUS_SUCCESS;
+err_btgatt_interface_client_refresh:
+  cleanup_pdu_wbuf(wbuf);
+  return status;
+}
+
+static bt_status_t
+opcode_client_search_service(const struct pdu* cmd)
+{
+  long off;
+  int32_t connid;
+  uint8_t filtered;
+  bt_uuid_t uuid;
+  bt_uuid_t* uuid_p;
+  struct pdu_wbuf* wbuf;
+  bt_status_t status;
+
+  assert(btgatt_interface);
+  assert(btgatt_interface->client);
+  assert(btgatt_interface->client->search_service);
+
+  off = read_pdu_at(cmd, 0, "iC", &connid, &filtered);
+  if (off < 0) {
+    return BT_STATUS_PARM_INVALID;
+  }
+  if (filtered) {
+    if (read_bt_uuid_t(cmd, off, &uuid) < 0) {
+      return BT_STATUS_PARM_INVALID;
+    }
+    uuid_p = &uuid;
+  } else {
+    uuid_p = NULL;
+  }
+  wbuf = create_pdu_wbuf(0, 0, NULL);
+  if (!wbuf) {
+    return BT_STATUS_NOMEM;
+  }
+  status = btgatt_interface->client->search_service(connid, uuid_p);
+  if (status != BT_STATUS_SUCCESS) {
+    goto err_btgatt_interface_client_search_service;
+  }
+  init_pdu(&wbuf->buf.pdu, cmd->service, cmd->opcode);
+  send_pdu(wbuf);
+
+  return BT_STATUS_SUCCESS;
+err_btgatt_interface_client_search_service:
+  cleanup_pdu_wbuf(wbuf);
+  return status;
+}
+
+static bt_status_t
+opcode_client_get_included_service(const struct pdu* cmd)
+{
+  long off;
+  int32_t connid;
+  btgatt_srvc_id_t srvc_id;
+  uint8_t continuation;
+  btgatt_srvc_id_t incl_srvc_id;
+  btgatt_srvc_id_t* incl_srvc_id_p;
+  struct pdu_wbuf* wbuf;
+  bt_status_t status;
+
+  assert(btgatt_interface);
+  assert(btgatt_interface->client);
+  assert(btgatt_interface->client->get_included_service);
+
+  off = read_pdu_at(cmd, 0, "i", &connid);
+  if (off < 0) {
+    return BT_STATUS_PARM_INVALID;
+  }
+  off = read_btgatt_srvc_id_t(cmd, off, &srvc_id);
+  if (off < 0) {
+    return BT_STATUS_PARM_INVALID;
+  }
+  off = read_pdu_at(cmd, off, "C", &continuation);
+  if (off < 0) {
+    return BT_STATUS_PARM_INVALID;
+  }
+  if (continuation) {
+    off = read_btgatt_srvc_id_t(cmd, off, &incl_srvc_id);
+    if (off < 0) {
+      return BT_STATUS_PARM_INVALID;
+    }
+    incl_srvc_id_p = &incl_srvc_id;
+  } else {
+    incl_srvc_id_p = NULL;
+  }
+  wbuf = create_pdu_wbuf(0, 0, NULL);
+  if (!wbuf) {
+    return BT_STATUS_NOMEM;
+  }
+  status = btgatt_interface->client->get_included_service(connid, &srvc_id,
+                                                          incl_srvc_id_p);
+  if (status != BT_STATUS_SUCCESS) {
+    goto err_btgatt_interface_client_get_included_service;
+  }
+  init_pdu(&wbuf->buf.pdu, cmd->service, cmd->opcode);
+  send_pdu(wbuf);
+
+  return BT_STATUS_SUCCESS;
+err_btgatt_interface_client_get_included_service:
+  cleanup_pdu_wbuf(wbuf);
+  return status;
+}
+
+static bt_status_t
+opcode_client_get_characteristic(const struct pdu* cmd)
+{
+  long off;
+  int32_t connid;
+  btgatt_srvc_id_t srvc_id;
+  uint8_t continuation;
+  btgatt_gatt_id_t char_id;
+  btgatt_gatt_id_t* char_id_p;
+  struct pdu_wbuf* wbuf;
+  bt_status_t status;
+
+  assert(btgatt_interface);
+  assert(btgatt_interface->client);
+  assert(btgatt_interface->client->get_characteristic);
+
+  off = read_pdu_at(cmd, 0, "i", &connid);
+  if (off < 0) {
+    return BT_STATUS_PARM_INVALID;
+  }
+  off = read_btgatt_srvc_id_t(cmd, off, &srvc_id);
+  if (off < 0) {
+    return BT_STATUS_PARM_INVALID;
+  }
+  off = read_pdu_at(cmd, off, "C", &continuation);
+  if (off < 0) {
+    return BT_STATUS_PARM_INVALID;
+  }
+  if (continuation) {
+    off = read_btgatt_gatt_id_t(cmd, off, &char_id);
+    if (off < 0) {
+      return BT_STATUS_PARM_INVALID;
+    }
+    char_id_p = &char_id;
+  } else {
+    char_id_p = NULL;
+  }
+  wbuf = create_pdu_wbuf(0, 0, NULL);
+  if (!wbuf) {
+    return BT_STATUS_NOMEM;
+  }
+  status = btgatt_interface->client->get_characteristic(connid, &srvc_id,
+                                                        char_id_p);
+  if (status != BT_STATUS_SUCCESS) {
+    goto err_btgatt_interface_client_get_characteristic;
+  }
+  init_pdu(&wbuf->buf.pdu, cmd->service, cmd->opcode);
+  send_pdu(wbuf);
+
+  return BT_STATUS_SUCCESS;
+err_btgatt_interface_client_get_characteristic:
+  cleanup_pdu_wbuf(wbuf);
+  return status;
+}
+
+static bt_status_t
+opcode_client_get_descriptor(const struct pdu* cmd)
+{
+  long off;
+  int32_t connid;
+  btgatt_srvc_id_t srvc_id;
+  btgatt_gatt_id_t char_id, desc_id;
+  uint8_t continuation;
+  btgatt_gatt_id_t* desc_id_p;
+  struct pdu_wbuf* wbuf;
+  bt_status_t status;
+
+  assert(btgatt_interface);
+  assert(btgatt_interface->client);
+  assert(btgatt_interface->client->get_descriptor);
+
+  off = read_pdu_at(cmd, 0, "i", &connid);
+  if (off < 0) {
+    return BT_STATUS_PARM_INVALID;
+  }
+  off = read_btgatt_srvc_id_t(cmd, off, &srvc_id);
+  if (off < 0) {
+    return BT_STATUS_PARM_INVALID;
+  }
+  off = read_btgatt_gatt_id_t(cmd, off, &char_id);
+  if (off < 0) {
+    return BT_STATUS_PARM_INVALID;
+  }
+  off = read_pdu_at(cmd, off, "C", &continuation);
+  if (off < 0) {
+    return BT_STATUS_PARM_INVALID;
+  }
+  if (continuation) {
+    off = read_btgatt_gatt_id_t(cmd, off, &desc_id);
+    if (off < 0) {
+      return BT_STATUS_PARM_INVALID;
+    }
+    desc_id_p = &desc_id;
+  } else {
+    desc_id_p = NULL;
+  }
+  wbuf = create_pdu_wbuf(0, 0, NULL);
+  if (!wbuf) {
+    return BT_STATUS_NOMEM;
+  }
+  status = btgatt_interface->client->get_descriptor(connid, &srvc_id,
+                                                    &char_id, desc_id_p);
+  if (status != BT_STATUS_SUCCESS) {
+    goto err_btgatt_interface_client_get_descriptor;
+  }
+  init_pdu(&wbuf->buf.pdu, cmd->service, cmd->opcode);
+  send_pdu(wbuf);
+
+  return BT_STATUS_SUCCESS;
+err_btgatt_interface_client_get_descriptor:
+  cleanup_pdu_wbuf(wbuf);
+  return status;
+}
+
+static bt_status_t
+opcode_client_read_characteristic(const struct pdu* cmd)
+{
+  long off;
+  int32_t connid, auth_req;
+  btgatt_srvc_id_t srvc_id;
+  btgatt_gatt_id_t char_id;
+  struct pdu_wbuf* wbuf;
+  bt_status_t status;
+
+  assert(btgatt_interface);
+  assert(btgatt_interface->client);
+  assert(btgatt_interface->client->read_characteristic);
+
+  off = read_pdu_at(cmd, 0, "i", &connid);
+  if (off < 0) {
+    return BT_STATUS_PARM_INVALID;
+  }
+  off = read_btgatt_srvc_id_t(cmd, off, &srvc_id);
+  if (off < 0) {
+    return BT_STATUS_PARM_INVALID;
+  }
+  off = read_btgatt_gatt_id_t(cmd, off, &char_id);
+  if (off < 0) {
+    return BT_STATUS_PARM_INVALID;
+  }
+  off = read_pdu_at(cmd, off, "i", &auth_req);
+  if (off < 0) {
+    return BT_STATUS_PARM_INVALID;
+  }
+  wbuf = create_pdu_wbuf(0, 0, NULL);
+  if (!wbuf) {
+    return BT_STATUS_NOMEM;
+  }
+  status = btgatt_interface->client->read_characteristic(connid, &srvc_id,
+                                                         &char_id, auth_req);
+  if (status != BT_STATUS_SUCCESS) {
+    goto err_btgatt_interface_client_read_characteristic;
+  }
+  init_pdu(&wbuf->buf.pdu, cmd->service, cmd->opcode);
+  send_pdu(wbuf);
+
+  return BT_STATUS_SUCCESS;
+err_btgatt_interface_client_read_characteristic:
+  cleanup_pdu_wbuf(wbuf);
+  return status;
+}
+
+static bt_status_t
+opcode_client_write_characteristic(const struct pdu* cmd)
+{
+  long off;
+  int32_t connid, write_type, len, auth_req;
+  btgatt_srvc_id_t srvc_id;
+  btgatt_gatt_id_t char_id;
+  void* value;
+  struct pdu_wbuf* wbuf;
+  bt_status_t status;
+
+  assert(btgatt_interface);
+  assert(btgatt_interface->client);
+  assert(btgatt_interface->client->write_characteristic);
+
+  off = read_pdu_at(cmd, 0, "i", &connid);
+  if (off < 0) {
+    return BT_STATUS_PARM_INVALID;
+  }
+  off = read_btgatt_srvc_id_t(cmd, off, &srvc_id);
+  if (off < 0) {
+    return BT_STATUS_PARM_INVALID;
+  }
+  off = read_btgatt_gatt_id_t(cmd, off, &char_id);
+  if (off < 0) {
+    return BT_STATUS_PARM_INVALID;
+  }
+  off = read_pdu_at(cmd, off, "iii", &write_type, &len, &auth_req);
+  if (off < 0) {
+    return BT_STATUS_PARM_INVALID;
+  }
+  if (len < 0) {
+    ALOGE("len is negative");
+    return BT_STATUS_PARM_INVALID;
+  }
+  off = read_pdu_at(cmd, off, "M", &value, (size_t)len);
+  if (off < 0) {
+    return BT_STATUS_PARM_INVALID;
+  }
+  wbuf = create_pdu_wbuf(0, 0, NULL);
+  if (!wbuf) {
+    status = BT_STATUS_NOMEM;
+    goto err_create_pdu_wbuf;
+  }
+  status = btgatt_interface->client->write_characteristic(connid, &srvc_id,
+                                                          &char_id,
+                                                          write_type, len,
+                                                          auth_req, value);
+  if (status != BT_STATUS_SUCCESS) {
+    goto err_btgatt_interface_client_write_characteristic;
+  }
+  init_pdu(&wbuf->buf.pdu, cmd->service, cmd->opcode);
+  send_pdu(wbuf);
+
+  free(value);
+
+  return BT_STATUS_SUCCESS;
+err_btgatt_interface_client_write_characteristic:
+  cleanup_pdu_wbuf(wbuf);
+err_create_pdu_wbuf:
+  free(value);
+  return status;
+}
+
+static bt_status_t
+opcode_client_read_descriptor(const struct pdu* cmd)
+{
+  long off;
+  int32_t connid;
+  btgatt_srvc_id_t srvc_id;
+  btgatt_gatt_id_t char_id, desc_id;
+  int32_t auth_req;
+  struct pdu_wbuf* wbuf;
+  bt_status_t status;
+
+  assert(btgatt_interface);
+  assert(btgatt_interface->client);
+  assert(btgatt_interface->client->read_descriptor);
+
+  off = read_pdu_at(cmd, 0, "i", &connid);
+  if (off < 0) {
+    return BT_STATUS_PARM_INVALID;
+  }
+  off = read_btgatt_srvc_id_t(cmd, off, &srvc_id);
+  if (off < 0) {
+    return BT_STATUS_PARM_INVALID;
+  }
+  off = read_btgatt_gatt_id_t(cmd, off, &char_id);
+  if (off < 0) {
+    return BT_STATUS_PARM_INVALID;
+  }
+  off = read_btgatt_gatt_id_t(cmd, off, &desc_id);
+  if (off < 0) {
+    return BT_STATUS_PARM_INVALID;
+  }
+  off = read_pdu_at(cmd, off, "i", &auth_req);
+  if (off < 0) {
+    return BT_STATUS_PARM_INVALID;
+  }
+  wbuf = create_pdu_wbuf(0, 0, NULL);
+  if (!wbuf) {
+    return BT_STATUS_NOMEM;
+  }
+  status = btgatt_interface->client->read_descriptor(connid, &srvc_id,
+                                                     &char_id, &desc_id,
+                                                     auth_req);
+  if (status != BT_STATUS_SUCCESS) {
+    goto err_btgatt_interface_client_read_descriptor;
+  }
+  init_pdu(&wbuf->buf.pdu, cmd->service, cmd->opcode);
+  send_pdu(wbuf);
+
+  return BT_STATUS_SUCCESS;
+err_btgatt_interface_client_read_descriptor:
+  cleanup_pdu_wbuf(wbuf);
+  return status;
+}
+
+static bt_status_t
+opcode_client_write_descriptor(const struct pdu* cmd)
+{
+  long off;
+  int32_t connid, write_type, len, auth_req;
+  btgatt_srvc_id_t srvc_id;
+  btgatt_gatt_id_t char_id, desc_id;
+  void* value;
+  struct pdu_wbuf* wbuf;
+  bt_status_t status;
+
+  assert(btgatt_interface);
+  assert(btgatt_interface->client);
+  assert(btgatt_interface->client->write_descriptor);
+
+  off = read_pdu_at(cmd, 0, "i", &connid);
+  if (off < 0) {
+    return BT_STATUS_PARM_INVALID;
+  }
+  off = read_btgatt_srvc_id_t(cmd, off, &srvc_id);
+  if (off < 0) {
+    return BT_STATUS_PARM_INVALID;
+  }
+  off = read_btgatt_gatt_id_t(cmd, off, &char_id);
+  if (off < 0) {
+    return BT_STATUS_PARM_INVALID;
+  }
+  off = read_btgatt_gatt_id_t(cmd, off, &desc_id);
+  if (off < 0) {
+    return BT_STATUS_PARM_INVALID;
+  }
+  off = read_pdu_at(cmd, off, "iii", &write_type, &len, &auth_req);
+  if (off < 0) {
+    return BT_STATUS_PARM_INVALID;
+  }
+  if (len < 0) {
+    ALOGE("len is negative");
+    return BT_STATUS_PARM_INVALID;
+  }
+  off = read_pdu_at(cmd, off, "M", &value, (size_t)len);
+  if (off < 0) {
+    return BT_STATUS_PARM_INVALID;
+  }
+  wbuf = create_pdu_wbuf(0, 0, NULL);
+  if (!wbuf) {
+    status = BT_STATUS_NOMEM;
+    goto err_create_pdu_wbuf;
+  }
+  status = btgatt_interface->client->write_descriptor(connid, &srvc_id,
+                                                      &char_id, &desc_id,
+                                                      write_type, len,
+                                                      auth_req, value);
+  if (status != BT_STATUS_SUCCESS) {
+    goto err_btgatt_interface_client_write_descriptor;
+  }
+  init_pdu(&wbuf->buf.pdu, cmd->service, cmd->opcode);
+  send_pdu(wbuf);
+
+  free(value);
+
+  return BT_STATUS_SUCCESS;
+err_btgatt_interface_client_write_descriptor:
+  cleanup_pdu_wbuf(wbuf);
+err_create_pdu_wbuf:
+  free(value);
+  return status;
+}
+
+static bt_status_t
+opcode_client_execute_write(const struct pdu* cmd)
+{
+  int32_t connid, execute;
+  struct pdu_wbuf* wbuf;
+  bt_status_t status;
+
+  assert(btgatt_interface);
+  assert(btgatt_interface->client);
+  assert(btgatt_interface->client->execute_write);
+
+  if (read_pdu_at(cmd, 0, "ii", &connid, &execute) < 0) {
+    return BT_STATUS_PARM_INVALID;
+  }
+  wbuf = create_pdu_wbuf(0, 0, NULL);
+  if (!wbuf) {
+    return BT_STATUS_NOMEM;
+  }
+  status = btgatt_interface->client->execute_write(connid, execute);
+  if (status != BT_STATUS_SUCCESS) {
+    goto err_btgatt_interface_client_execute_write;
+  }
+  init_pdu(&wbuf->buf.pdu, cmd->service, cmd->opcode);
+  send_pdu(wbuf);
+
+  return BT_STATUS_SUCCESS;
+err_btgatt_interface_client_execute_write:
+  cleanup_pdu_wbuf(wbuf);
+  return status;
+}
+
+static bt_status_t
+opcode_client_register_for_notification(const struct pdu* cmd)
+{
+  long off;
+  int32_t client_if;
+  bt_bdaddr_t bdaddr;
+  btgatt_srvc_id_t srvc_id;
+  btgatt_gatt_id_t char_id;
+  struct pdu_wbuf* wbuf;
+  bt_status_t status;
+
+  assert(btgatt_interface);
+  assert(btgatt_interface->client);
+  assert(btgatt_interface->client->register_for_notification);
+
+  off = read_pdu_at(cmd, 0, "i", &client_if);
+  if (off < 0) {
+    return BT_STATUS_PARM_INVALID;
+  }
+  off = read_bt_bdaddr_t(cmd, off, &bdaddr);
+  if (off < 0) {
+    return BT_STATUS_PARM_INVALID;
+  }
+  off = read_btgatt_srvc_id_t(cmd, off, &srvc_id);
+  if (off < 0) {
+    return BT_STATUS_PARM_INVALID;
+  }
+  off = read_btgatt_gatt_id_t(cmd, off, &char_id);
+  if (off < 0) {
+    return BT_STATUS_PARM_INVALID;
+  }
+  wbuf = create_pdu_wbuf(0, 0, NULL);
+  if (!wbuf) {
+    return BT_STATUS_NOMEM;
+  }
+  status = btgatt_interface->client->register_for_notification(client_if,
+                                                               &bdaddr,
+                                                               &srvc_id,
+                                                               &char_id);
+  if (status != BT_STATUS_SUCCESS) {
+    goto err_btgatt_interface_client_register_for_notification;
+  }
+  init_pdu(&wbuf->buf.pdu, cmd->service, cmd->opcode);
+  send_pdu(wbuf);
+
+  return BT_STATUS_SUCCESS;
+err_btgatt_interface_client_register_for_notification:
+  cleanup_pdu_wbuf(wbuf);
+  return status;
+}
+
+static bt_status_t
+opcode_client_deregister_for_notification(const struct pdu* cmd)
+{
+  long off;
+  int32_t client_if;
+  bt_bdaddr_t bdaddr;
+  btgatt_srvc_id_t srvc_id;
+  btgatt_gatt_id_t char_id;
+  struct pdu_wbuf* wbuf;
+  bt_status_t status;
+
+  assert(btgatt_interface);
+  assert(btgatt_interface->client);
+  assert(btgatt_interface->client->deregister_for_notification);
+
+  off = read_pdu_at(cmd, 0, "i", &client_if);
+  if (off < 0) {
+    return BT_STATUS_PARM_INVALID;
+  }
+  off = read_bt_bdaddr_t(cmd, off, &bdaddr);
+  if (off < 0) {
+    return BT_STATUS_PARM_INVALID;
+  }
+  off = read_btgatt_srvc_id_t(cmd, off, &srvc_id);
+  if (off < 0) {
+    return BT_STATUS_PARM_INVALID;
+  }
+  off = read_btgatt_gatt_id_t(cmd, off, &char_id);
+  if (off < 0) {
+    return BT_STATUS_PARM_INVALID;
+  }
+  wbuf = create_pdu_wbuf(0, 0, NULL);
+  if (!wbuf) {
+    return BT_STATUS_NOMEM;
+  }
+  status = btgatt_interface->client->deregister_for_notification(client_if,
+                                                                 &bdaddr,
+                                                                 &srvc_id,
+                                                                 &char_id);
+  if (status != BT_STATUS_SUCCESS) {
+    goto err_btgatt_interface_client_deregister_for_notification;
+  }
+  init_pdu(&wbuf->buf.pdu, cmd->service, cmd->opcode);
+  send_pdu(wbuf);
+
+  return BT_STATUS_SUCCESS;
+err_btgatt_interface_client_deregister_for_notification:
+  cleanup_pdu_wbuf(wbuf);
+  return status;
+}
+
+static bt_status_t
+opcode_client_read_remote_rssi(const struct pdu* cmd)
+{
+  long off;
+  int32_t client_if;
+  bt_bdaddr_t bdaddr;
+  struct pdu_wbuf* wbuf;
+  bt_status_t status;
+
+  assert(btgatt_interface);
+  assert(btgatt_interface->client);
+  assert(btgatt_interface->client->read_remote_rssi);
+
+  off = read_pdu_at(cmd, 0, "i", &client_if);
+  if (off < 0) {
+    return BT_STATUS_PARM_INVALID;
+  }
+  if (read_bt_bdaddr_t(cmd, off, &bdaddr) < 0) {
+    return BT_STATUS_PARM_INVALID;
+  }
+  wbuf = create_pdu_wbuf(0, 0, NULL);
+  if (!wbuf) {
+    return BT_STATUS_NOMEM;
+  }
+  status = btgatt_interface->client->read_remote_rssi(client_if, &bdaddr);
+  if (status != BT_STATUS_SUCCESS) {
+    goto err_btgatt_interface_client_read_remote_rssi;
+  }
+  init_pdu(&wbuf->buf.pdu, cmd->service, cmd->opcode);
+  send_pdu(wbuf);
+
+  return BT_STATUS_SUCCESS;
+err_btgatt_interface_client_read_remote_rssi:
+  cleanup_pdu_wbuf(wbuf);
+  return status;
+}
+
+static bt_status_t
+opcode_client_get_device_type(const struct pdu* cmd)
+{
+  int type;
+  bt_bdaddr_t bdaddr;
+  struct pdu_wbuf* wbuf;
+  bt_status_t status;
+
+  assert(btgatt_interface);
+  assert(btgatt_interface->client);
+  assert(btgatt_interface->client->get_device_type);
+
+  if (read_bt_bdaddr_t(cmd, 0, &bdaddr) < 0) {
+    return BT_STATUS_PARM_INVALID;
+  }
+  wbuf = create_pdu_wbuf(1, 0, NULL);
+  if (!wbuf) {
+    return BT_STATUS_NOMEM;
+  }
+  type = btgatt_interface->client->get_device_type(&bdaddr);
+  if (type > (int)UCHAR_MAX) {
+    ALOGE("type too large");
+    status = BT_STATUS_FAIL;
+    goto err_btgatt_interface_client_get_device_type;
+  }
+
+  init_pdu(&wbuf->buf.pdu, cmd->service, cmd->opcode);
+  if (append_to_pdu(&wbuf->buf.pdu, "C", type) < 0) {
+    status = BT_STATUS_FAIL;
+    goto err_append_to_pdu_at;
+  }
+  send_pdu(wbuf);
+
+  return BT_STATUS_SUCCESS;
+err_append_to_pdu_at:
+err_btgatt_interface_client_get_device_type:
+  cleanup_pdu_wbuf(wbuf);
+  return status;
+}
+
+static bt_status_t
+opcode_client_set_advertising_data(const struct pdu* cmd)
+{
+  long off;
+  int32_t server_if, min_ival, max_ival, appearence;
+  uint8_t set_scan_rsp, include_name, include_txpower;
+  uint16_t manu_len, data_len, uuid_len;
+  void* manu;
+  void* data;
+  void* uuid;
+  struct pdu_wbuf* wbuf;
+  bt_status_t status;
+
+  assert(btgatt_interface);
+  assert(btgatt_interface->client);
+  assert(btgatt_interface->client->set_adv_data);
+
+  off = read_pdu_at(cmd, 0, "iCCCiiiS", &server_if,
+                                        &set_scan_rsp,
+                                        &include_name,
+                                        &include_txpower,
+                                        &min_ival,
+                                        &max_ival,
+                                        &appearence,
+                                        &manu_len,
+                                        &data_len,
+                                        &uuid_len);
+  if (off < 0) {
+    return BT_STATUS_PARM_INVALID;
+  }
+  if (read_pdu_at(cmd, off, "M", &manu, (size_t)manu_len) < 0) {
+    return BT_STATUS_PARM_INVALID;
+  }
+  if (read_pdu_at(cmd, off, "M", &data, (size_t)data_len) < 0) {
+    status = BT_STATUS_PARM_INVALID;
+    goto err_read_pdu_at_data;
+  }
+  if (read_pdu_at(cmd, off, "M", &uuid, (size_t)uuid_len) < 0) {
+    status = BT_STATUS_PARM_INVALID;
+    goto err_read_pdu_at_uuid;
+  }
+  wbuf = create_pdu_wbuf(0, 0, NULL);
+  if (!wbuf) {
+    status = BT_STATUS_NOMEM;
+    goto err_create_pdu_wbuf;
+  }
+#if ANDROID_VERSION_CONST >= ENCODED_ANDROID_VERSION_CONST(4,4,3)
+  status = btgatt_interface->client->set_adv_data(server_if, set_scan_rsp,
+                                                  include_name,
+                                                  include_txpower,
+                                                  min_ival, max_ival,
+                                                  appearence,
+                                                  manu_len, manu,
+                                                  data_len, data,
+                                                  uuid_len, uuid);
+#else
+  status = btgatt_interface->client->set_adv_data(server_if, set_scan_rsp,
+                                                  include_name,
+                                                  include_txpower,
+                                                  min_ival, max_ival,
+                                                  appearence,
+                                                  manu_len, manu);
+#endif
+  if (status != BT_STATUS_SUCCESS) {
+    goto err_btgatt_interface_client_set_adv_data;
+  }
+  init_pdu(&wbuf->buf.pdu, cmd->service, cmd->opcode);
+  send_pdu(wbuf);
+
+  free(uuid);
+  free(data);
+  free(manu);
+
+  return BT_STATUS_SUCCESS;
+err_btgatt_interface_client_set_adv_data:
+  cleanup_pdu_wbuf(wbuf);
+err_create_pdu_wbuf:
+  free(uuid);
+err_read_pdu_at_uuid:
+  free(data);
+err_read_pdu_at_data:
+  free(manu);
+  return status;
+}
+
+static bt_status_t
+opcode_client_test_command(const struct pdu* cmd)
+{
+  long off;
+  int32_t command;
+  btgatt_test_params_t params;
+  struct pdu_wbuf* wbuf;
+  bt_status_t status;
+
+  assert(btgatt_interface);
+  assert(btgatt_interface->client);
+  assert(btgatt_interface->client->test_command);
+
+  off = read_pdu_at(cmd, 0, "i", &command);
+  if (off < 0) {
+    return BT_STATUS_PARM_INVALID;
+  }
+  if (read_btgatt_test_params_t(cmd, off, &params) < 0) {
+    return BT_STATUS_PARM_INVALID;
+  }
+  wbuf = create_pdu_wbuf(0, 0, NULL);
+  if (!wbuf) {
+    status = BT_STATUS_NOMEM;
+    goto err_create_pdu_wbuf;
+  }
+  status = btgatt_interface->client->test_command(command, &params);
+  if (status != BT_STATUS_SUCCESS) {
+    goto err_btgatt_interface_client_test_command;
+  }
+
+  init_pdu(&wbuf->buf.pdu, cmd->service, cmd->opcode);
+  send_pdu(wbuf);
+
+  cleanup_btgatt_test_params_t(&params);
+
+  return BT_STATUS_SUCCESS;
+err_btgatt_interface_client_test_command:
+  cleanup_pdu_wbuf(wbuf);
+err_create_pdu_wbuf:
+  cleanup_btgatt_test_params_t(&params);
+  return status;
+}
+
+#if ANDROID_VERSION >= 21
+static bt_status_t
+opcode_client_scan_filter_param_setup(const struct pdu* cmd)
+{
+  long off;
+  int32_t client_if, action, filt_index, feat_seln, list_logic_type,
+          filt_logic_type, rssi_high_thres, rssi_low_thres, dely_mode,
+          found_timeout, lost_timeout, found_timeout_cnt;
+  struct pdu_wbuf* wbuf;
+  bt_status_t status;
+
+  assert(btgatt_interface);
+  assert(btgatt_interface->client);
+  assert(btgatt_interface->client->scan_filter_param_setup);
+
+  off = read_pdu_at(cmd, 0, "iiiiiiiiiiii", &client_if,
+                                            &action,
+                                            &filt_index,
+                                            &feat_seln,
+                                            &list_logic_type,
+                                            &filt_logic_type,
+                                            &rssi_high_thres,
+                                            &rssi_low_thres,
+                                            &dely_mode,
+                                            &found_timeout,
+                                            &lost_timeout,
+                                            &found_timeout_cnt);
+  if (off < 0) {
+    return BT_STATUS_PARM_INVALID;
+  }
+  wbuf = create_pdu_wbuf(0, 0, NULL);
+  if (!wbuf) {
+    return BT_STATUS_NOMEM;
+  }
+  status = btgatt_interface->client->scan_filter_param_setup(client_if,
+                                                             action,
+                                                             filt_index,
+                                                             feat_seln,
+                                                             list_logic_type,
+                                                             filt_logic_type,
+                                                             rssi_high_thres,
+                                                             rssi_low_thres,
+                                                             dely_mode,
+                                                             found_timeout,
+                                                             lost_timeout,
+                                                             found_timeout_cnt);
+  if (status != BT_STATUS_SUCCESS) {
+    goto err_btgatt_interface_client_scan_filter_param_setup;
+  }
+
+  init_pdu(&wbuf->buf.pdu, cmd->service, cmd->opcode);
+  send_pdu(wbuf);
+
+  return BT_STATUS_SUCCESS;
+err_btgatt_interface_client_scan_filter_param_setup:
+  cleanup_pdu_wbuf(wbuf);
+  return status;
+}
+
+static bt_status_t
+opcode_client_scan_filter_add_remove(const struct pdu* cmd)
+{
+  long off;
+  int32_t client_if, action, filt_type, filt_index, company_id,
+          company_id_mask, data_len, mask_len;
+  bt_uuid_t uuid;
+  bt_uuid_t uuid_mask;
+  bt_bdaddr_t bdaddr;
+  uint8_t addr_type;
+  void* data;
+  void* mask;
+  struct pdu_wbuf* wbuf;
+  bt_status_t status;
+
+  assert(btgatt_interface);
+  assert(btgatt_interface->client);
+  assert(btgatt_interface->client->scan_filter_param_setup);
+
+  off = read_pdu_at(cmd, 0, "iiiiii", &client_if,
+                                      &action,
+                                      &filt_type,
+                                      &filt_index,
+                                      &company_id,
+                                      &company_id_mask);
+  if (off < 0) {
+    return BT_STATUS_PARM_INVALID;
+  }
+  off= read_bt_uuid_t(cmd, off, &uuid);
+  if (off < 0) {
+    return BT_STATUS_PARM_INVALID;
+  }
+  off= read_bt_uuid_t(cmd, off, &uuid_mask);
+  if (off < 0) {
+    return BT_STATUS_PARM_INVALID;
+  }
+  off= read_bt_bdaddr_t(cmd, off, &bdaddr);
+  if (off < 0) {
+    return BT_STATUS_PARM_INVALID;
+  }
+  off = read_pdu_at(cmd, 0, "Cii", &addr_type, &data_len, &mask_len);
+  if (off < 0) {
+    return BT_STATUS_PARM_INVALID;
+  }
+  if (data_len < 0) {
+    ALOGE("data_len is negative");
+    return BT_STATUS_PARM_INVALID;
+  }
+  if (mask_len < 0) {
+    ALOGE("mask_len is negative");
+    return BT_STATUS_PARM_INVALID;
+  }
+  off = read_pdu_at(cmd, 0, "M", &data, (size_t)data_len);
+  if (off < 0) {
+    return BT_STATUS_PARM_INVALID;
+  }
+  off = read_pdu_at(cmd, 0, "M", &mask, (size_t)mask_len);
+  if (off < 0) {
+    status = BT_STATUS_PARM_INVALID;
+    goto err_read_pdu_at_mask;
+  }
+  wbuf = create_pdu_wbuf(0, 0, NULL);
+  if (!wbuf) {
+    status = BT_STATUS_NOMEM;
+    goto err_create_pdu_wbuf;
+  }
+  status = btgatt_interface->client->scan_filter_add_remove(client_if,
+                                                            action,
+                                                            filt_type,
+                                                            filt_index,
+                                                            company_id,
+                                                            company_id_mask,
+                                                            &uuid,
+                                                            &uuid_mask,
+                                                            &bdaddr,
+                                                            (char)addr_type,
+                                                            data_len, data,
+                                                            mask_len, mask);
+  if (status != BT_STATUS_SUCCESS) {
+    goto err_btgatt_interface_client_scan_filter_add_remove;
+  }
+
+  init_pdu(&wbuf->buf.pdu, cmd->service, cmd->opcode);
+  send_pdu(wbuf);
+
+  free(mask);
+  free(data);
+
+  return BT_STATUS_SUCCESS;
+err_btgatt_interface_client_scan_filter_add_remove:
+  cleanup_pdu_wbuf(wbuf);
+err_create_pdu_wbuf:
+  free(mask);
+err_read_pdu_at_mask:
+  free(data);
+  return status;
+}
+
+static bt_status_t
+opcode_client_scan_filter_clear(const struct pdu* cmd)
+{
+  int32_t client_if, filt_index;
+  struct pdu_wbuf* wbuf;
+  bt_status_t status;
+
+  assert(btgatt_interface);
+  assert(btgatt_interface->client);
+  assert(btgatt_interface->client->scan_filter_clear);
+
+  if (read_pdu_at(cmd, 0, "ii", &client_if, &filt_index) < 0) {
+    return BT_STATUS_PARM_INVALID;
+  }
+  wbuf = create_pdu_wbuf(0, 0, NULL);
+  if (!wbuf) {
+    return BT_STATUS_NOMEM;
+  }
+  status = btgatt_interface->client->scan_filter_clear(client_if,
+                                                       filt_index);
+  if (status != BT_STATUS_SUCCESS) {
+    goto err_btgatt_interface_client_scan_filter_clear;
+  }
+
+  init_pdu(&wbuf->buf.pdu, cmd->service, cmd->opcode);
+  send_pdu(wbuf);
+
+  return BT_STATUS_SUCCESS;
+err_btgatt_interface_client_scan_filter_clear:
+  cleanup_pdu_wbuf(wbuf);
+  return status;
+}
+
+static bt_status_t
+opcode_client_scan_filter_enable(const struct pdu* cmd)
+{
+  int32_t client_if;
+  uint8_t enable;
+  struct pdu_wbuf* wbuf;
+  bt_status_t status;
+
+  assert(btgatt_interface);
+  assert(btgatt_interface->client);
+  assert(btgatt_interface->client->scan_filter_enable);
+
+  if (read_pdu_at(cmd, 0, "iC", &client_if, &enable) < 0) {
+    return BT_STATUS_PARM_INVALID;
+  }
+  wbuf = create_pdu_wbuf(0, 0, NULL);
+  if (!wbuf) {
+    return BT_STATUS_NOMEM;
+  }
+  status = btgatt_interface->client->scan_filter_enable(client_if,
+                                                        enable);
+  if (status != BT_STATUS_SUCCESS) {
+    goto err_btgatt_interface_client_scan_filter_enable;
+  }
+
+  init_pdu(&wbuf->buf.pdu, cmd->service, cmd->opcode);
+  send_pdu(wbuf);
+
+  return BT_STATUS_SUCCESS;
+err_btgatt_interface_client_scan_filter_enable:
+  cleanup_pdu_wbuf(wbuf);
+  return status;
+}
+
+static bt_status_t
+opcode_client_configure_mtu(const struct pdu* cmd)
+{
+  int32_t connid, mtu;
+  struct pdu_wbuf* wbuf;
+  bt_status_t status;
+
+  assert(btgatt_interface);
+  assert(btgatt_interface->client);
+  assert(btgatt_interface->client->configure_mtu);
+
+  if (read_pdu_at(cmd, 0, "ii", &connid, &mtu) < 0) {
+    return BT_STATUS_PARM_INVALID;
+  }
+  wbuf = create_pdu_wbuf(0, 0, NULL);
+  if (!wbuf) {
+    return BT_STATUS_NOMEM;
+  }
+  status = btgatt_interface->client->configure_mtu(connid, mtu);
+  if (status != BT_STATUS_SUCCESS) {
+    goto err_btgatt_interface_client_configure_mtu;
+  }
+
+  init_pdu(&wbuf->buf.pdu, cmd->service, cmd->opcode);
+  send_pdu(wbuf);
+
+  return BT_STATUS_SUCCESS;
+err_btgatt_interface_client_configure_mtu:
+  cleanup_pdu_wbuf(wbuf);
+  return status;
+}
+
+static bt_status_t
+opcode_client_conn_parameter_update(const struct pdu* cmd)
+{
+  long off;
+  bt_bdaddr_t bdaddr;
+  int32_t min_ival, max_ival, latency, timeout;
+  struct pdu_wbuf* wbuf;
+  bt_status_t status;
+
+  assert(btgatt_interface);
+  assert(btgatt_interface->client);
+  assert(btgatt_interface->client->conn_parameter_update);
+
+  off= read_bt_bdaddr_t(cmd, 0, &bdaddr);
+  if (off < 0) {
+    return BT_STATUS_PARM_INVALID;
+  }
+  off = read_pdu_at(cmd, 0, "iiii", &min_ival,
+                                    &max_ival,
+                                    &latency,
+                                    &timeout);
+  if (off < 0) {
+    return BT_STATUS_PARM_INVALID;
+  }
+  wbuf = create_pdu_wbuf(0, 0, NULL);
+  if (!wbuf) {
+    return BT_STATUS_NOMEM;
+  }
+  status = btgatt_interface->client->conn_parameter_update(&bdaddr,
+                                                           min_ival,
+                                                           max_ival,
+                                                           latency,
+                                                           timeout);
+  if (status != BT_STATUS_SUCCESS) {
+    goto err_btgatt_interface_client_conn_parameter_update;
+  }
+
+  init_pdu(&wbuf->buf.pdu, cmd->service, cmd->opcode);
+  send_pdu(wbuf);
+
+  return BT_STATUS_SUCCESS;
+err_btgatt_interface_client_conn_parameter_update:
+  cleanup_pdu_wbuf(wbuf);
+  return status;
+}
+
+static bt_status_t
+opcode_client_set_scan_parameters(const struct pdu* cmd)
+{
+  int32_t interval, window;
+  struct pdu_wbuf* wbuf;
+  bt_status_t status;
+
+  assert(btgatt_interface);
+  assert(btgatt_interface->client);
+  assert(btgatt_interface->client->set_scan_parameters);
+
+  if (read_pdu_at(cmd, 0, "ii", &interval, &window) < 0) {
+    return BT_STATUS_PARM_INVALID;
+  }
+  wbuf = create_pdu_wbuf(0, 0, NULL);
+  if (!wbuf) {
+    return BT_STATUS_NOMEM;
+  }
+  status = btgatt_interface->client->set_scan_parameters(interval, window);
+  if (status != BT_STATUS_SUCCESS) {
+    goto err_btgatt_interface_client_set_scan_parameters;
+  }
+
+  init_pdu(&wbuf->buf.pdu, cmd->service, cmd->opcode);
+  send_pdu(wbuf);
+
+  return BT_STATUS_SUCCESS;
+err_btgatt_interface_client_set_scan_parameters:
+  cleanup_pdu_wbuf(wbuf);
+  return status;
+}
+
+static bt_status_t
+opcode_client_multi_adv_enable(const struct pdu* cmd)
+{
+  long off;
+  int32_t client_if, min_ival, max_ival, adv_type, channel_map, txpower,
+          timeout;
+  struct pdu_wbuf* wbuf;
+  bt_status_t status;
+
+  assert(btgatt_interface);
+  assert(btgatt_interface->client);
+  assert(btgatt_interface->client->multi_adv_enable);
+
+  off = read_pdu_at(cmd, 0, "iiiiiii", &client_if,
+                                       &min_ival,
+                                       &max_ival,
+                                       &adv_type,
+                                       &channel_map,
+                                       &txpower,
+                                       &timeout);
+  if (off < 0) {
+    return BT_STATUS_PARM_INVALID;
+  }
+  wbuf = create_pdu_wbuf(0, 0, NULL);
+  if (!wbuf) {
+    return BT_STATUS_NOMEM;
+  }
+  status = btgatt_interface->client->multi_adv_enable(client_if, min_ival,
+                                                      max_ival, adv_type,
+                                                      channel_map, txpower,
+                                                      timeout);
+  if (status != BT_STATUS_SUCCESS) {
+    goto err_btgatt_interface_client_multi_adv_enable;
+  }
+
+  init_pdu(&wbuf->buf.pdu, cmd->service, cmd->opcode);
+  send_pdu(wbuf);
+
+  return BT_STATUS_SUCCESS;
+err_btgatt_interface_client_multi_adv_enable:
+  cleanup_pdu_wbuf(wbuf);
+  return status;
+}
+
+static bt_status_t
+opcode_client_multi_adv_update(const struct pdu* cmd)
+{
+  long off;
+  int32_t client_if, min_ival, max_ival, adv_type, channel_map, txpower,
+          timeout;
+  struct pdu_wbuf* wbuf;
+  bt_status_t status;
+
+  assert(btgatt_interface);
+  assert(btgatt_interface->client);
+  assert(btgatt_interface->client->multi_adv_update);
+
+  off = read_pdu_at(cmd, 0, "iiiiiii", &client_if,
+                                       &min_ival,
+                                       &max_ival,
+                                       &adv_type,
+                                       &channel_map,
+                                       &txpower,
+                                       &timeout);
+  if (off < 0) {
+    return BT_STATUS_PARM_INVALID;
+  }
+  wbuf = create_pdu_wbuf(0, 0, NULL);
+  if (!wbuf) {
+    return BT_STATUS_NOMEM;
+  }
+  status = btgatt_interface->client->multi_adv_update(client_if, min_ival,
+                                                      max_ival, adv_type,
+                                                      channel_map, txpower,
+                                                      timeout);
+  if (status != BT_STATUS_SUCCESS) {
+    goto err_btgatt_interface_client_multi_adv_update;
+  }
+
+  init_pdu(&wbuf->buf.pdu, cmd->service, cmd->opcode);
+  send_pdu(wbuf);
+
+  return BT_STATUS_SUCCESS;
+err_btgatt_interface_client_multi_adv_update:
+  cleanup_pdu_wbuf(wbuf);
+  return status;
+}
+
+static bt_status_t
+opcode_client_multi_adv_set_inst_data(const struct pdu* cmd)
+{
+  long off;
+  int32_t client_if, appearence, manu_len, data_len, uuid_len;
+  uint8_t set_scan_rsp, include_name, include_txpower;
+  void* manu;
+  void* data;
+  void* uuid;
+  struct pdu_wbuf* wbuf;
+  bt_status_t status;
+
+  assert(btgatt_interface);
+  assert(btgatt_interface->client);
+  assert(btgatt_interface->client->multi_adv_set_inst_data);
+
+  off = read_pdu_at(cmd, 0, "iCCCiiii", &client_if,
+                                        &set_scan_rsp,
+                                        &include_name,
+                                        &include_txpower,
+                                        &appearence,
+                                        &manu_len,
+                                        &data_len,
+                                        &uuid_len);
+  if (off < 0) {
+    return BT_STATUS_PARM_INVALID;
+  }
+  if (manu_len < 0) {
+    ALOGE("manu_len is negative");
+    return BT_STATUS_PARM_INVALID;
+  }
+  if (data_len < 0) {
+    ALOGE("data_len is negative");
+    return BT_STATUS_PARM_INVALID;
+  }
+  if (uuid_len < 0) {
+    ALOGE("uuid_len is negative");
+    return BT_STATUS_PARM_INVALID;
+  }
+  off = read_pdu_at(cmd, off, "M", &manu, (size_t)manu_len);
+  if (off < 0) {
+    return BT_STATUS_PARM_INVALID;
+  }
+  off = read_pdu_at(cmd, off, "M", &data, (size_t)data_len);
+  if (off < 0) {
+    status = BT_STATUS_PARM_INVALID;
+    goto err_read_pdu_at_data;
+  }
+  off = read_pdu_at(cmd, off, "M", &uuid, (size_t)uuid_len);
+  if (off < 0) {
+    status = BT_STATUS_PARM_INVALID;
+    goto err_read_pdu_at_uuid;
+  }
+  wbuf = create_pdu_wbuf(0, 0, NULL);
+  if (!wbuf) {
+    status = BT_STATUS_NOMEM;
+    goto err_create_pdu_wbuf;
+  }
+  status = btgatt_interface->client->multi_adv_set_inst_data(client_if,
+                                                             set_scan_rsp,
+                                                             include_name,
+                                                             include_txpower,
+                                                             appearence,
+                                                             manu_len, manu,
+                                                             data_len, data,
+                                                             uuid_len, uuid);
+  if (status != BT_STATUS_SUCCESS) {
+    goto err_btgatt_interface_client_multi_adv_update;
+  }
+
+  init_pdu(&wbuf->buf.pdu, cmd->service, cmd->opcode);
+  send_pdu(wbuf);
+
+  free(uuid);
+  free(data);
+  free(manu);
+
+  return BT_STATUS_SUCCESS;
+err_btgatt_interface_client_multi_adv_update:
+  cleanup_pdu_wbuf(wbuf);
+err_create_pdu_wbuf:
+  free(uuid);
+err_read_pdu_at_uuid:
+  free(data);
+err_read_pdu_at_data:
+  free(manu);
+  return status;
+}
+
+static bt_status_t
+opcode_client_multi_adv_disable(const struct pdu* cmd)
+{
+  long off;
+  int32_t client_if;
+  struct pdu_wbuf* wbuf;
+  bt_status_t status;
+
+  assert(btgatt_interface);
+  assert(btgatt_interface->client);
+  assert(btgatt_interface->client->multi_adv_disable);
+
+  off = read_pdu_at(cmd, 0, "i", &client_if);
+  if (off < 0) {
+    return BT_STATUS_PARM_INVALID;
+  }
+  wbuf = create_pdu_wbuf(0, 0, NULL);
+  if (!wbuf) {
+    return BT_STATUS_NOMEM;
+  }
+  status = btgatt_interface->client->multi_adv_disable(client_if);
+  if (status != BT_STATUS_SUCCESS) {
+    goto err_btgatt_interface_client_multi_adv_disable;
+  }
+
+  init_pdu(&wbuf->buf.pdu, cmd->service, cmd->opcode);
+  send_pdu(wbuf);
+
+  return BT_STATUS_SUCCESS;
+err_btgatt_interface_client_multi_adv_disable:
+  cleanup_pdu_wbuf(wbuf);
+  return status;
+}
+
+static bt_status_t
+opcode_client_batchscan_cfg_storage(const struct pdu* cmd)
+{
+  long off;
+  int32_t client_if, full_max, trunc_max, notify_threshold;
+  struct pdu_wbuf* wbuf;
+  bt_status_t status;
+
+  assert(btgatt_interface);
+  assert(btgatt_interface->client);
+  assert(btgatt_interface->client->batchscan_cfg_storage);
+
+  off = read_pdu_at(cmd, 0, "iiii", &client_if,
+                                    &full_max,
+                                    &trunc_max,
+                                    &notify_threshold);
+  if (off < 0) {
+    return BT_STATUS_PARM_INVALID;
+  }
+  wbuf = create_pdu_wbuf(0, 0, NULL);
+  if (!wbuf) {
+    return BT_STATUS_NOMEM;
+  }
+  status = btgatt_interface->client->batchscan_cfg_storage(client_if,
+                                                           full_max,
+                                                           trunc_max,
+                                                           notify_threshold);
+  if (status != BT_STATUS_SUCCESS) {
+    goto err_btgatt_interface_client_batchscan_cfg_storage;
+  }
+
+  init_pdu(&wbuf->buf.pdu, cmd->service, cmd->opcode);
+  send_pdu(wbuf);
+
+  return BT_STATUS_SUCCESS;
+err_btgatt_interface_client_batchscan_cfg_storage:
+  cleanup_pdu_wbuf(wbuf);
+  return status;
+}
+
+static bt_status_t
+opcode_client_batchscan_enb_batch_scan(const struct pdu* cmd)
+{
+  long off;
+  int32_t client_if, scan_mode, scan_ival, scan_window, addr_type, discard;
+  struct pdu_wbuf* wbuf;
+  bt_status_t status;
+
+  assert(btgatt_interface);
+  assert(btgatt_interface->client);
+  assert(btgatt_interface->client->batchscan_enb_batch_scan);
+
+  off = read_pdu_at(cmd, 0, "iiiiii", &client_if,
+                                      &scan_mode,
+                                      &scan_ival,
+                                      &scan_window,
+                                      &addr_type,
+                                      &discard);
+  if (off < 0) {
+    return BT_STATUS_PARM_INVALID;
+  }
+  wbuf = create_pdu_wbuf(0, 0, NULL);
+  if (!wbuf) {
+    return BT_STATUS_NOMEM;
+  }
+  status = btgatt_interface->client->batchscan_enb_batch_scan(client_if,
+                                                              scan_mode,
+                                                              scan_ival,
+                                                              scan_window,
+                                                              addr_type,
+                                                              discard);
+  if (status != BT_STATUS_SUCCESS) {
+    goto err_btgatt_interface_client_batchscan_enb_batch_scan;
+  }
+
+  init_pdu(&wbuf->buf.pdu, cmd->service, cmd->opcode);
+  send_pdu(wbuf);
+
+  return BT_STATUS_SUCCESS;
+err_btgatt_interface_client_batchscan_enb_batch_scan:
+  cleanup_pdu_wbuf(wbuf);
+  return status;
+}
+
+static bt_status_t
+opcode_client_batchscan_dis_batch_scan(const struct pdu* cmd)
+{
+  int32_t client_if;
+  struct pdu_wbuf* wbuf;
+  bt_status_t status;
+
+  assert(btgatt_interface);
+  assert(btgatt_interface->client);
+  assert(btgatt_interface->client->batchscan_dis_batch_scan);
+
+  if (read_pdu_at(cmd, 0, "i", &client_if) < 0) {
+    return BT_STATUS_PARM_INVALID;
+  }
+  wbuf = create_pdu_wbuf(0, 0, NULL);
+  if (!wbuf) {
+    return BT_STATUS_NOMEM;
+  }
+  status = btgatt_interface->client->batchscan_dis_batch_scan(client_if);
+  if (status != BT_STATUS_SUCCESS) {
+    goto err_btgatt_interface_client_batchscan_dis_batch_scan;
+  }
+
+  init_pdu(&wbuf->buf.pdu, cmd->service, cmd->opcode);
+  send_pdu(wbuf);
+
+  return BT_STATUS_SUCCESS;
+err_btgatt_interface_client_batchscan_dis_batch_scan:
+  cleanup_pdu_wbuf(wbuf);
+  return status;
+}
+
+static bt_status_t
+opcode_client_batchscan_read_reports(const struct pdu* cmd)
+{
+  long off;
+  int32_t client_if, scan_mode;
+  struct pdu_wbuf* wbuf;
+  bt_status_t status;
+
+  assert(btgatt_interface);
+  assert(btgatt_interface->client);
+  assert(btgatt_interface->client->batchscan_read_reports);
+
+  if (read_pdu_at(cmd, 0, "ii", &client_if, &scan_mode) < 0) {
+    return BT_STATUS_PARM_INVALID;
+  }
+  wbuf = create_pdu_wbuf(0, 0, NULL);
+  if (!wbuf) {
+    return BT_STATUS_NOMEM;
+  }
+  status = btgatt_interface->client->batchscan_read_reports(client_if,
+                                                            scan_mode);
+  if (status != BT_STATUS_SUCCESS) {
+    goto err_btgatt_interface_client_batchscan_read_reports;
+  }
+
+  init_pdu(&wbuf->buf.pdu, cmd->service, cmd->opcode);
+  send_pdu(wbuf);
+
+  return BT_STATUS_SUCCESS;
+err_btgatt_interface_client_batchscan_read_reports:
+  cleanup_pdu_wbuf(wbuf);
+  return status;
+}
+#endif
+
+static bt_status_t
+opcode_server_register(const struct pdu* cmd)
+{
+  bt_uuid_t uuid;
+  struct pdu_wbuf* wbuf;
+  bt_status_t status;
+
+  assert(btgatt_interface);
+  assert(btgatt_interface->server);
+  assert(btgatt_interface->server->register_server);
+
+  if (read_bt_uuid_t(cmd, 0, &uuid) < 0) {
+    return BT_STATUS_PARM_INVALID;
+  }
+  wbuf = create_pdu_wbuf(0, 0, NULL);
+  if (!wbuf) {
+    return BT_STATUS_NOMEM;
+  }
+  status = btgatt_interface->server->register_server(&uuid);
+  if (status != BT_STATUS_SUCCESS) {
+    goto err_btgatt_interface_server_register_server;
+  }
+  init_pdu(&wbuf->buf.pdu, cmd->service, cmd->opcode);
+  send_pdu(wbuf);
+
+  return BT_STATUS_SUCCESS;
+err_btgatt_interface_server_register_server:
+  cleanup_pdu_wbuf(wbuf);
+  return status;
+}
+
+static bt_status_t
+opcode_server_unregister(const struct pdu* cmd)
+{
+  int32_t server_if;
+  struct pdu_wbuf* wbuf;
+  bt_status_t status;
+
+  assert(btgatt_interface);
+  assert(btgatt_interface->server);
+  assert(btgatt_interface->server->unregister_server);
+
+  if (read_pdu_at(cmd, 0, "i", &server_if) < 0) {
+    return BT_STATUS_PARM_INVALID;
+  }
+  wbuf = create_pdu_wbuf(0, 0, NULL);
+  if (!wbuf) {
+    return BT_STATUS_NOMEM;
+  }
+  status = btgatt_interface->server->unregister_server(server_if);
+  if (status != BT_STATUS_SUCCESS) {
+    goto err_btgatt_interface_server_unregister_server;
+  }
+  init_pdu(&wbuf->buf.pdu, cmd->service, cmd->opcode);
+  send_pdu(wbuf);
+
+  return BT_STATUS_SUCCESS;
+err_btgatt_interface_server_unregister_server:
+  cleanup_pdu_wbuf(wbuf);
+  return status;
+}
+
+static bt_status_t
+opcode_server_connect(const struct pdu* cmd)
+{
+#if ANDROID_VERSION >= 21
+  long off;
+  int32_t server_if, transport;
+  bt_bdaddr_t bdaddr;
+  uint8_t is_direct;
+  struct pdu_wbuf* wbuf;
+  bt_status_t status;
+
+  assert(btgatt_interface);
+  assert(btgatt_interface->server);
+  assert(btgatt_interface->server->connect);
+
+  off = read_pdu_at(cmd, 0, "i", &server_if);
+  if (off < 0) {
+    return BT_STATUS_PARM_INVALID;
+  }
+  off = read_bt_bdaddr_t(cmd, off, &bdaddr);
+  if (off < 0) {
+    return BT_STATUS_PARM_INVALID;
+  }
+  if (read_pdu_at(cmd, off, "Ci", &is_direct, &transport) < 0) {
+    return BT_STATUS_PARM_INVALID;
+  }
+  wbuf = create_pdu_wbuf(0, 0, NULL);
+  if (!wbuf) {
+    return BT_STATUS_NOMEM;
+  }
+  status = btgatt_interface->server->connect(server_if, &bdaddr,
+                                             is_direct, transport);
+  if (status != BT_STATUS_SUCCESS) {
+    goto err_btgatt_interface_server_connect;
+  }
+  init_pdu(&wbuf->buf.pdu, cmd->service, cmd->opcode);
+  send_pdu(wbuf);
+
+  return BT_STATUS_SUCCESS;
+err_btgatt_interface_server_connect:
+  cleanup_pdu_wbuf(wbuf);
+  return status;
+#else
+  long off;
+  int32_t server_if;
+  bt_bdaddr_t bdaddr;
+  uint8_t is_direct;
+  struct pdu_wbuf* wbuf;
+  bt_status_t status;
+
+  assert(btgatt_interface);
+  assert(btgatt_interface->server);
+  assert(btgatt_interface->server->connect);
+
+  off = read_pdu_at(cmd, 0, "i", &server_if);
+  if (off < 0) {
+    return BT_STATUS_PARM_INVALID;
+  }
+  off = read_bt_bdaddr_t(cmd, off, &bdaddr);
+  if (off < 0) {
+    return BT_STATUS_PARM_INVALID;
+  }
+  if (read_pdu_at(cmd, off, "Ci", &is_direct) < 0) {
+    return BT_STATUS_PARM_INVALID;
+  }
+  wbuf = create_pdu_wbuf(0, 0, NULL);
+  if (!wbuf) {
+    return BT_STATUS_NOMEM;
+  }
+  status = btgatt_interface->server->connect(server_if, &bdaddr, is_direct);
+  if (status != BT_STATUS_SUCCESS) {
+    goto err_btgatt_interface_server_connect;
+  }
+  init_pdu(&wbuf->buf.pdu, cmd->service, cmd->opcode);
+  send_pdu(wbuf);
+
+  return BT_STATUS_SUCCESS;
+err_btgatt_interface_server_connect:
+  cleanup_pdu_wbuf(wbuf);
+  return status;
+#endif
+}
+
+static bt_status_t
+opcode_server_disconnect(const struct pdu* cmd)
+{
+  long off;
+  int32_t server_if, connid;
+  bt_bdaddr_t bdaddr;
+  struct pdu_wbuf* wbuf;
+  bt_status_t status;
+
+  assert(btgatt_interface);
+  assert(btgatt_interface->server);
+  assert(btgatt_interface->server->disconnect);
+
+  off = read_pdu_at(cmd, 0, "i", &server_if);
+  if (off < 0) {
+    return BT_STATUS_PARM_INVALID;
+  }
+  off = read_bt_bdaddr_t(cmd, off, &bdaddr);
+  if (off < 0) {
+    return BT_STATUS_PARM_INVALID;
+  }
+  if (read_pdu_at(cmd, off, "i", &connid) < 0) {
+    return BT_STATUS_PARM_INVALID;
+  }
+  wbuf = create_pdu_wbuf(0, 0, NULL);
+  if (!wbuf) {
+    return BT_STATUS_NOMEM;
+  }
+  status = btgatt_interface->server->disconnect(server_if, &bdaddr, connid);
+  if (status != BT_STATUS_SUCCESS) {
+    goto err_btgatt_interface_server_disconnect;
+  }
+  init_pdu(&wbuf->buf.pdu, cmd->service, cmd->opcode);
+  send_pdu(wbuf);
+
+  return BT_STATUS_SUCCESS;
+err_btgatt_interface_server_disconnect:
+  cleanup_pdu_wbuf(wbuf);
+  return status;
+}
+
+static bt_status_t
+opcode_server_add_service(const struct pdu* cmd)
+{
+  long off;
+  int32_t server_if, num_handles;
+  btgatt_srvc_id_t srvc_id;
+  struct pdu_wbuf* wbuf;
+  bt_status_t status;
+
+  assert(btgatt_interface);
+  assert(btgatt_interface->server);
+  assert(btgatt_interface->server->add_service);
+
+  off = read_pdu_at(cmd, 0, "i", &server_if);
+  if (off < 0) {
+    return BT_STATUS_PARM_INVALID;
+  }
+  off = read_btgatt_srvc_id_t(cmd, off, &srvc_id);
+  if (off < 0) {
+    return BT_STATUS_PARM_INVALID;
+  }
+  if (read_pdu_at(cmd, off, "i", &num_handles) < 0) {
+    return BT_STATUS_PARM_INVALID;
+  }
+  wbuf = create_pdu_wbuf(0, 0, NULL);
+  if (!wbuf) {
+    return BT_STATUS_NOMEM;
+  }
+  status = btgatt_interface->server->add_service(server_if, &srvc_id,
+                                                 num_handles);
+  if (status != BT_STATUS_SUCCESS) {
+    goto err_btgatt_interface_server_add_service;
+  }
+  init_pdu(&wbuf->buf.pdu, cmd->service, cmd->opcode);
+  send_pdu(wbuf);
+
+  return BT_STATUS_SUCCESS;
+err_btgatt_interface_server_add_service:
+  cleanup_pdu_wbuf(wbuf);
+  return status;
+}
+
+static bt_status_t
+opcode_server_add_included_service(const struct pdu* cmd)
+{
+  long off;
+  int32_t server_if, service_handle, included_handle;
+  struct pdu_wbuf* wbuf;
+  bt_status_t status;
+
+  assert(btgatt_interface);
+  assert(btgatt_interface->server);
+  assert(btgatt_interface->server->add_included_service);
+
+  off = read_pdu_at(cmd, 0, "iii", &server_if,
+                                   &service_handle,
+                                   &included_handle);
+  if (off < 0) {
+    return BT_STATUS_PARM_INVALID;
+  }
+  wbuf = create_pdu_wbuf(0, 0, NULL);
+  if (!wbuf) {
+    return BT_STATUS_NOMEM;
+  }
+  status = btgatt_interface->server->add_included_service(server_if,
+                                                          service_handle,
+                                                          included_handle);
+  if (status != BT_STATUS_SUCCESS) {
+    goto err_btgatt_interface_server_add_included_service;
+  }
+  init_pdu(&wbuf->buf.pdu, cmd->service, cmd->opcode);
+  send_pdu(wbuf);
+
+  return BT_STATUS_SUCCESS;
+err_btgatt_interface_server_add_included_service:
+  cleanup_pdu_wbuf(wbuf);
+  return status;
+}
+
+static bt_status_t
+opcode_server_add_characteristic(const struct pdu* cmd)
+{
+  long off;
+  int32_t server_if, service_handle, properties, permissions;
+  bt_uuid_t uuid;
+  struct pdu_wbuf* wbuf;
+  bt_status_t status;
+
+  assert(btgatt_interface);
+  assert(btgatt_interface->server);
+  assert(btgatt_interface->server->add_characteristic);
+
+  off = read_pdu_at(cmd, 0, "ii", &server_if, &service_handle);
+  if (off < 0) {
+    return BT_STATUS_PARM_INVALID;
+  }
+  off = read_bt_uuid_t(cmd, off, &uuid);
+  if (off < 0) {
+    return BT_STATUS_PARM_INVALID;
+  }
+  off = read_pdu_at(cmd, off, "ii", &properties, &permissions);
+  if (off < 0) {
+    return BT_STATUS_PARM_INVALID;
+  }
+  wbuf = create_pdu_wbuf(0, 0, NULL);
+  if (!wbuf) {
+    return BT_STATUS_NOMEM;
+  }
+  status = btgatt_interface->server->add_characteristic(server_if,
+                                                        service_handle,
+                                                        &uuid, properties,
+                                                        permissions);
+  if (status != BT_STATUS_SUCCESS) {
+    goto err_btgatt_interface_server_add_characteristic;
+  }
+  init_pdu(&wbuf->buf.pdu, cmd->service, cmd->opcode);
+  send_pdu(wbuf);
+
+  return BT_STATUS_SUCCESS;
+err_btgatt_interface_server_add_characteristic:
+  cleanup_pdu_wbuf(wbuf);
+  return status;
+}
+
+static bt_status_t
+opcode_server_add_descriptor(const struct pdu* cmd)
+{
+  long off;
+  int32_t server_if, service_handle, permissions;
+  bt_uuid_t uuid;
+  struct pdu_wbuf* wbuf;
+  bt_status_t status;
+
+  assert(btgatt_interface);
+  assert(btgatt_interface->server);
+  assert(btgatt_interface->server->add_descriptor);
+
+  off = read_pdu_at(cmd, 0, "ii", &server_if, &service_handle);
+  if (off < 0) {
+    return BT_STATUS_PARM_INVALID;
+  }
+  off = read_bt_uuid_t(cmd, off, &uuid);
+  if (off < 0) {
+    return BT_STATUS_PARM_INVALID;
+  }
+  off = read_pdu_at(cmd, off, "i", &permissions);
+  if (off < 0) {
+    return BT_STATUS_PARM_INVALID;
+  }
+  wbuf = create_pdu_wbuf(0, 0, NULL);
+  if (!wbuf) {
+    return BT_STATUS_NOMEM;
+  }
+  status = btgatt_interface->server->add_descriptor(server_if, service_handle,
+                                                    &uuid, permissions);
+  if (status != BT_STATUS_SUCCESS) {
+    goto err_btgatt_interface_server_add_descriptor;
+  }
+  init_pdu(&wbuf->buf.pdu, cmd->service, cmd->opcode);
+  send_pdu(wbuf);
+
+  return BT_STATUS_SUCCESS;
+err_btgatt_interface_server_add_descriptor:
+  cleanup_pdu_wbuf(wbuf);
+  return status;
+}
+
+static bt_status_t
+opcode_server_start_service(const struct pdu* cmd)
+{
+  long off;
+  int32_t server_if, service_handle, transport;
+  struct pdu_wbuf* wbuf;
+  bt_status_t status;
+
+  assert(btgatt_interface);
+  assert(btgatt_interface->server);
+  assert(btgatt_interface->server->start_service);
+
+  off = read_pdu_at(cmd, 0, "iii", &server_if,
+                                   &service_handle,
+                                   &transport);
+  if (off < 0) {
+    return BT_STATUS_PARM_INVALID;
+  }
+  wbuf = create_pdu_wbuf(0, 0, NULL);
+  if (!wbuf) {
+    return BT_STATUS_NOMEM;
+  }
+  status = btgatt_interface->server->start_service(server_if, service_handle,
+                                                   transport);
+  if (status != BT_STATUS_SUCCESS) {
+    goto err_btgatt_interface_server_start_service;
+  }
+  init_pdu(&wbuf->buf.pdu, cmd->service, cmd->opcode);
+  send_pdu(wbuf);
+
+  return BT_STATUS_SUCCESS;
+err_btgatt_interface_server_start_service:
+  cleanup_pdu_wbuf(wbuf);
+  return status;
+}
+
+static bt_status_t
+opcode_server_stop_service(const struct pdu* cmd)
+{
+  int32_t server_if, service_handle;
+  struct pdu_wbuf* wbuf;
+  bt_status_t status;
+
+  assert(btgatt_interface);
+  assert(btgatt_interface->server);
+  assert(btgatt_interface->server->stop_service);
+
+  if (read_pdu_at(cmd, 0, "ii", &server_if, &service_handle) < 0) {
+    return BT_STATUS_PARM_INVALID;
+  }
+  wbuf = create_pdu_wbuf(0, 0, NULL);
+  if (!wbuf) {
+    return BT_STATUS_NOMEM;
+  }
+  status = btgatt_interface->server->stop_service(server_if, service_handle);
+  if (status != BT_STATUS_SUCCESS) {
+    goto err_btgatt_interface_server_stop_service;
+  }
+  init_pdu(&wbuf->buf.pdu, cmd->service, cmd->opcode);
+  send_pdu(wbuf);
+
+  return BT_STATUS_SUCCESS;
+err_btgatt_interface_server_stop_service:
+  cleanup_pdu_wbuf(wbuf);
+  return status;
+}
+
+static bt_status_t
+opcode_server_delete_service(const struct pdu* cmd)
+{
+  int32_t server_if, service_handle;
+  struct pdu_wbuf* wbuf;
+  bt_status_t status;
+
+  assert(btgatt_interface);
+  assert(btgatt_interface->server);
+  assert(btgatt_interface->server->delete_service);
+
+  if (read_pdu_at(cmd, 0, "ii", &server_if, &service_handle) < 0) {
+    return BT_STATUS_PARM_INVALID;
+  }
+  wbuf = create_pdu_wbuf(0, 0, NULL);
+  if (!wbuf) {
+    return BT_STATUS_NOMEM;
+  }
+  status = btgatt_interface->server->delete_service(server_if, service_handle);
+  if (status != BT_STATUS_SUCCESS) {
+    goto err_btgatt_interface_server_delete_service;
+  }
+  init_pdu(&wbuf->buf.pdu, cmd->service, cmd->opcode);
+  send_pdu(wbuf);
+
+  return BT_STATUS_SUCCESS;
+err_btgatt_interface_server_delete_service:
+  cleanup_pdu_wbuf(wbuf);
+  return status;
+}
+
+static bt_status_t
+opcode_server_send_indication(const struct pdu* cmd)
+{
+  long off;
+  int32_t server_if, attrib_handle, connid, len, confirm;
+  void* value;
+  struct pdu_wbuf* wbuf;
+  bt_status_t status;
+
+  assert(btgatt_interface);
+  assert(btgatt_interface->server);
+  assert(btgatt_interface->server->send_indication);
+
+  off = read_pdu_at(cmd, 0, "iiiii", &server_if,
+                                     &attrib_handle,
+                                     &connid,
+                                     &len,
+                                     &confirm);
+  if (off < 0) {
+    return BT_STATUS_PARM_INVALID;
+  }
+  if (len < 0) {
+    ALOGE("len is negative");
+    return BT_STATUS_PARM_INVALID;
+  }
+  if (read_pdu_at(cmd, off, "M", &value, (size_t)len) < 0) {
+    return BT_STATUS_PARM_INVALID;
+  }
+  wbuf = create_pdu_wbuf(0, 0, NULL);
+  if (!wbuf) {
+    status = BT_STATUS_NOMEM;
+    goto err_create_pdu_wbuf;
+  }
+  status = btgatt_interface->server->send_indication(server_if,
+                                                     attrib_handle, connid,
+                                                     len, confirm, value);
+  if (status != BT_STATUS_SUCCESS) {
+    goto err_btgatt_interface_server_send_indication;
+  }
+  init_pdu(&wbuf->buf.pdu, cmd->service, cmd->opcode);
+  send_pdu(wbuf);
+
+  free(value);
+
+  return BT_STATUS_SUCCESS;
+err_btgatt_interface_server_send_indication:
+  cleanup_pdu_wbuf(wbuf);
+err_create_pdu_wbuf:
+  free(value);
+  return status;
+}
+
+static bt_status_t
+opcode_server_send_response(const struct pdu* cmd)
+{
+  long off;
+  int32_t connid, transid, stat;
+  btgatt_response_t response;
+  struct pdu_wbuf* wbuf;
+  bt_status_t status;
+
+  assert(btgatt_interface);
+  assert(btgatt_interface->server);
+  assert(btgatt_interface->server->send_response);
+
+  /* The HAL protocol mixes up |response| and |stat|. Thus
+   * we have to read the values directly without a helper
+   * function.
+   */
+  off = read_pdu_at(cmd, 0, "iiSSCiS", &connid,
+                                       &transid,
+                                       &response.attr_value.handle,
+                                       &response.attr_value.offset,
+                                       &response.attr_value.auth_req,
+                                       &stat,
+                                       &response.attr_value.len);
+  if (off < 0) {
+    return -1;
+  }
+  if (response.attr_value.len > BTGATT_MAX_ATTR_LEN) {
+    ALOGE("len is too large");
+    return BT_STATUS_PARM_INVALID;
+  }
+  off = read_pdu_at(cmd, off, "m", response.attr_value.value,
+                                   (size_t)response.attr_value.len);
+  if (off < 0) {
+    return -1;
+  }
+  wbuf = create_pdu_wbuf(0, 0, NULL);
+  if (!wbuf) {
+    status = BT_STATUS_NOMEM;
+    goto err_create_pdu_wbuf;
+  }
+  status = btgatt_interface->server->send_response(connid, transid, stat,
+                                                   &response);
+  if (status != BT_STATUS_SUCCESS) {
+    goto err_btgatt_interface_server_send_response;
+  }
+  init_pdu(&wbuf->buf.pdu, cmd->service, cmd->opcode);
+  send_pdu(wbuf);
+
+  return BT_STATUS_SUCCESS;
+err_btgatt_interface_server_send_response:
+  cleanup_pdu_wbuf(wbuf);
+err_create_pdu_wbuf:
+  return status;
+}
+
+static bt_status_t
 bt_gatt_handler(const struct pdu* cmd)
 {
   static bt_status_t (* const handler[256])(const struct pdu*) = {
+    [OPCODE_CLIENT_REGISTER] = opcode_client_register,
+    [OPCODE_CLIENT_UNREGISTER] = opcode_client_unregister,
+    [OPCODE_CLIENT_SCAN] = opcode_client_scan,
+    [OPCODE_CLIENT_CONNECT_DEVICE] = opcode_client_connect_device,
+    [OPCODE_CLIENT_DISCONNECT_DEVICE] = opcode_client_disconnect_device,
+    [OPCODE_CLIENT_LISTEN] = opcode_client_listen,
+    [OPCODE_CLIENT_REFRESH] = opcode_client_refresh,
+    [OPCODE_CLIENT_SEARCH_SERVICE]= opcode_client_search_service,
+    [OPCODE_CLIENT_GET_INCLUDED_SERVICES] =
+      opcode_client_get_included_service,
+    [OPCODE_CLIENT_GET_CHARACTERISTIC] =  opcode_client_get_characteristic,
+    [OPCODE_CLIENT_GET_DESCRIPTOR] = opcode_client_get_descriptor,
+    [OPCODE_CLIENT_READ_CHARACTERISTIC] = opcode_client_read_characteristic,
+    [OPCODE_CLIENT_WRITE_CHARACTERISTIC] = opcode_client_write_characteristic,
+    [OPCODE_CLIENT_READ_DESCRIPTOR] = opcode_client_read_descriptor,
+    [OPCODE_CLIENT_WRITE_DESCRIPTOR] = opcode_client_write_descriptor,
+    [OPCODE_CLIENT_EXECUTE_WRITE] = opcode_client_execute_write,
+    [OPCODE_CLIENT_REGISTER_FOR_NOTIFICATION] =
+      opcode_client_register_for_notification,
+    [OPCODE_CLIENT_DEREGISTER_FOR_NOTIFICATION] =
+      opcode_client_deregister_for_notification,
+    [OPCODE_CLIENT_READ_REMOTE_RSSI] = opcode_client_read_remote_rssi,
+    [OPCODE_CLIENT_GET_DEVICE_TYPE] = opcode_client_get_device_type,
+    [OPCODE_CLIENT_SET_ADVERTISING_DATA] = opcode_client_set_advertising_data,
+    [OPCODE_CLIENT_TEST_COMMAND] = opcode_client_test_command,
+    [OPCODE_SERVER_REGISTER_COMMAND] = opcode_server_register,
+    [OPCODE_SERVER_UNREGISTER_COMMAND] = opcode_server_unregister,
+    [OPCODE_SERVER_CONNECT_PERIPHERIAL] = opcode_server_connect,
+    [OPCODE_SERVER_DISCONNECT_PERIPHERIAL] = opcode_server_disconnect,
+    [OPCODE_SERVER_ADD_SERVICE] = opcode_server_add_service,
+    [OPCODE_SERVER_ADD_INCLUDED_SERVICE] = opcode_server_add_included_service,
+    [OPCODE_SERVER_ADD_CHARACTERISTIC] = opcode_server_add_characteristic,
+    [OPCODE_SERVER_ADD_DESCRIPTOR] = opcode_server_add_descriptor,
+    [OPCODE_SERVER_START_SERVICE] = opcode_server_start_service,
+    [OPCODE_SERVER_STOP_SERVICE] = opcode_server_stop_service,
+    [OPCODE_SERVER_DELETE_SERVICE] = opcode_server_delete_service,
+    [OPCODE_SERVER_SEND_INDICATION] = opcode_server_send_indication,
+    [OPCODE_SERVER_SEND_RESPONSE] = opcode_server_send_response,
+#if ANDROID_VERSION >= 21
+    [OPCODE_CLIENT_SCAN_FILTER_PARAMS_SETUP] =
+      opcode_client_scan_filter_param_setup,
+    [OPCODE_CLIENT_SCAN_FILTER_ADD_REMOVE] =
+      opcode_client_scan_filter_add_remove,
+    [OPCODE_CLIENT_SCAN_FILTER_CLEAR] = opcode_client_scan_filter_clear,
+    [OPCODE_CLIENT_SCAN_FILTER_ENABLE] = opcode_client_scan_filter_enable,
+    [OPCODE_CLIENT_CONFIGURE_MTU] = opcode_client_configure_mtu,
+    [OPCODE_CLIENT_CONNECTION_PARAMETER_UPDATE] =
+      opcode_client_conn_parameter_update,
+    [OPCODE_CLIENT_SET_SCAN_PARAMETERS] = opcode_client_set_scan_parameters,
+    [OPCODE_CLIENT_SETUP_MULTI_ADVERTISING] = opcode_client_multi_adv_enable,
+    [OPCODE_CLIENT_UPDATE_MULTI_ADVERTISING] = opcode_client_multi_adv_update,
+    [OPCODE_CLIENT_SETUP_MULTI_ADVERTISING_INSTANCE] =
+      opcode_client_multi_adv_set_inst_data,
+    [OPCODE_CLIENT_DISABLE_MULTI_ADVERTISING_INSTANCE] =
+      opcode_client_multi_adv_disable,
+    [OPCODE_CLIENT_CONFIGURE_BATCHSCAN] = opcode_client_batchscan_cfg_storage,
+    [OPCODE_CLIENT_ENABLE_BATCHSCAN] = opcode_client_batchscan_enb_batch_scan,
+    [OPCODE_CLIENT_DISABLE_BATCHSCAN] = opcode_client_batchscan_dis_batch_scan,
+    [OPCODE_CLIENT_READ_BATCHSCAN_REPORTS] =
+      opcode_client_batchscan_read_reports
+#endif
   };
 
   return handle_pdu_by_opcode(cmd, handler);
