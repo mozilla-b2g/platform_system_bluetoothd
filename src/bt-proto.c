@@ -117,6 +117,16 @@ read_pdu_at_va(const struct pdu* pdu, unsigned long offset,
         dst = va_arg(ap, void*);
         len = va_arg(ap, size_t);
         break;
+      case 'M': /* unallocated raw memory + length */
+        mem = va_arg(ap, void**);
+        len = va_arg(ap, size_t);
+        dst = malloc(len);
+        if (!dst) {
+          ALOGE_ERRNO("malloc");
+          return -1;
+        }
+        *mem = dst;
+        break;
       case '0': /* raw 0-terminated memory */
         mem = va_arg(ap, void**);
         chr = memchr(pdu->data + offset, '\0', pdu->len - offset);
@@ -282,6 +292,7 @@ write_pdu_at_va(struct pdu* pdu, unsigned long offset, const char* fmt,
         len = sizeof(L);
         break;
       case 'm': /* raw memory + length */
+      case 'M': /* raw memory + length */
         src = va_arg(ap, void*);
         len = va_arg(ap, size_t);
         break;
