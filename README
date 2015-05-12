@@ -1,0 +1,37 @@
+
+# bluetoothd
+
+bluetoothd wraps Android's Bluedroid driver behind a networking
+protocol. Bluetoothd is licensed under the Apache License 2.0. See
+the file LICENSE for more information.
+
+
+## Supported Versions
+
+bluetoothd supports Android with API version 17 or later.
+
+
+## Protocol
+
+For IPC, bluetoothd uses the BlueZ HAL protocol, as defined at
+
+  https://git.kernel.org/cgit/bluetooth/bluez.git/tree/android/hal-ipc-api.txt
+
+The protocol is supposed to be stable for each Android release. Currently,
+bluetoothd supports the following versions
+
+ * Android API versions 17 and 18
+
+  https://git.kernel.org/cgit/bluetooth/bluez.git/tree/android/hal-ipc-api.txt?id=5.14
+
+ * Android API versions 19 and 20
+
+  https://git.kernel.org/cgit/bluetooth/bluez.git/tree/android/hal-ipc-api.txt?id=5.24
+
+ * Android API version 21
+
+  https://git.kernel.org/cgit/bluetooth/bluez.git/tree/android/hal-ipc-api.txt?id=5.27
+
+ * Android API version 22
+
+  https://git.kernel.org/cgit/bluetooth/bluez.git/tree/android/hal-ipc-api.txt?id=5.30
