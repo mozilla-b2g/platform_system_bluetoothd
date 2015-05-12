@@ -90,3 +90,6 @@ append_bt_bdaddr_t(struct pdu* pdu, const bt_bdaddr_t* addr);
 
 long
 append_bt_bdname_t(struct pdu* pdu, const bt_bdname_t* name);
+
+long
+append_bt_uuid_t(struct pdu* pdu, const bt_uuid_t* uuid);

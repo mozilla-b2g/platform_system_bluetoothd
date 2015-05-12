@@ -427,3 +427,11 @@ append_bt_bdname_t(struct pdu* pdu, const bt_bdname_t* name)
 {
   return append_to_pdu(pdu, "m", name->name, (size_t)249);
 }
+
+long
+append_bt_uuid_t(struct pdu* pdu, const bt_uuid_t* uuid)
+{
+  assert(sizeof(uuid->uu) == 16);
+
+  return append_to_pdu(pdu, "m", uuid->uu, sizeof(uuid->uu));
+}
