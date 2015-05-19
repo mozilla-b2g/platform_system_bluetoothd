@@ -25,9 +25,13 @@ ifeq ($(strip $(bluetoothd_SRC_FILES_$(PLATFORM_SDK_VERSION))),)
 $(error "Please set $$bluetoothd_SRC_FILES_$(PLATFORM_SDK_VERSION) in bluetoothd's makefile.")
 endif
 
+ANDROID_VERSION_CONST := $(shell echo $(PLATFORM_VERSION) | awk -F. '{ printf "0x%02d%02d%02d",$$1,$$2,$$3 }')
+
 LOCAL_SRC_FILES := $(bluetoothd_SRC_FILES)
 LOCAL_C_INCLUDES := system/libfdio/include
-LOCAL_CFLAGS := -DANDROID_VERSION=$(PLATFORM_SDK_VERSION) -Wall -Werror
+LOCAL_CFLAGS := -DANDROID_VERSION=$(PLATFORM_SDK_VERSION) \
+                -DANDROID_VERSION_CONST=$(ANDROID_VERSION_CONST) \
+                -Wall -Werror
 LOCAL_SHARED_LIBRARIES := libfdio \
                           libhardware \
                           libhardware_legacy \
