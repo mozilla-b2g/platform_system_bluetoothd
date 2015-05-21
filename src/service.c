@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2014  Mozilla Foundation
+ * Copyright (C) 2014-2015  Mozilla Foundation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,12 +14,13 @@
  * limitations under the License.
  */
 
-#include "bt-proto.h"
-#include "bt-core-io.h"
-#include "bt-sock-io.h"
-#include "bt-hf-io.h"
 #include "bt-av-io.h"
+#include "bt-core-io.h"
+#include "bt-gatt-io.h"
+#include "bt-hf-io.h"
+#include "bt-proto.h"
 #include "bt-rc-io.h"
+#include "bt-sock-io.h"
 #include "service.h"
 
 bt_status_t (*service_handler[256])(const struct pdu*);
@@ -32,7 +33,8 @@ register_func
   [SERVICE_BT_SOCK] = register_bt_sock,
   [SERVICE_BT_HF] = register_bt_hf,
   [SERVICE_BT_AV] = register_bt_av,
-  [SERVICE_BT_RC] = register_bt_rc
+  [SERVICE_BT_RC] = register_bt_rc,
+  [SERVICE_BT_GATT] = register_bt_gatt
 };
 
 int (*unregister_service[256])() = {
@@ -40,5 +42,6 @@ int (*unregister_service[256])() = {
   [SERVICE_BT_SOCK] = unregister_bt_sock,
   [SERVICE_BT_HF] = unregister_bt_hf,
   [SERVICE_BT_AV] = unregister_bt_av,
-  [SERVICE_BT_RC] = unregister_bt_rc
+  [SERVICE_BT_RC] = unregister_bt_rc,
+  [SERVICE_BT_GATT] = unregister_bt_gatt
 };
