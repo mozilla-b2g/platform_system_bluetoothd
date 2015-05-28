@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2014  Mozilla Foundation
+ * Copyright (C) 2014-2015  Mozilla Foundation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,9 +18,6 @@
 
 #include <stdint.h>
 #include <hardware/bluetooth.h>
-#if ANDROID_VERSION >= 18
-#include <hardware/bt_rc.h>
-#endif
 
 enum {
   SERVICE_CORE = 0x00,
@@ -71,52 +68,6 @@ long
 read_bt_pin_code_t(const struct pdu* pdu, unsigned long off,
                    bt_pin_code_t* pin_code);
 
-#if ANDROID_VERSION >= 18
-long
-read_btrc_player_attr_t(const struct pdu* pdu, unsigned long off,
-                        btrc_player_attr_t* attr);
-
-long
-read_btrc_player_attr_t_array(const struct pdu* pdu, unsigned long off,
-                              btrc_player_attr_t* attr,
-                              unsigned long num_attrs);
-
-long
-read_btrc_player_settings_t(const struct pdu* pdu, unsigned long off,
-                            btrc_player_settings_t* settings);
-
-long
-read_btrc_player_setting_text_t(const struct pdu* pdu, unsigned long off,
-                                btrc_player_setting_text_t* attr);
-
-long
-read_btrc_player_setting_text_t_array(const struct pdu* pdu,
-                                      unsigned long off,
-                                      btrc_player_setting_text_t* attr,
-                                      unsigned long num_attrs);
-
-long
-read_btrc_element_attr_val_t(const struct pdu* pdu, unsigned long off,
-                             btrc_element_attr_val_t* attr);
-
-long
-read_btrc_element_attr_val_t_array(const struct pdu* pdu, unsigned long off,
-                                   btrc_element_attr_val_t* attr,
-                                   unsigned long num_attrs);
-
-long
-read_btrc_play_status_t(const struct pdu* pdu, unsigned long off,
-                        btrc_play_status_t* p_val);
-
-long
-read_btrc_uid_t(const struct pdu* pdu, unsigned long off, btrc_uid_t p_val);
-
-long
-read_btrc_register_notification_t(const struct pdu* pdu, unsigned long off,
-                                  btrc_event_id_t event_id,
-                                  btrc_register_notification_t *param);
-#endif
-
 long
 write_pdu_at(struct pdu* pdu, unsigned long offset, const char* fmt, ...);
 
@@ -139,19 +90,3 @@ append_bt_bdaddr_t(struct pdu* pdu, const bt_bdaddr_t* addr);
 
 long
 append_bt_bdname_t(struct pdu* pdu, const bt_bdname_t* name);
-
-#if ANDROID_VERSION >= 18
-long
-append_btrc_player_attr_t_array(struct pdu* pdu,
-                                const btrc_player_attr_t* attr,
-                                unsigned long num_attrs);
-
-long
-append_btrc_media_attr_t_array(struct pdu* pdu,
-                               const btrc_media_attr_t* attr,
-                               unsigned long num_attrs);
-
-long
-append_btrc_player_settings_t(struct pdu* pdu,
-                              const btrc_player_settings_t* settings);
-#endif

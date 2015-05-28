@@ -1,0 +1,28 @@
+
+This is a quick quide on how to port bluetoothd to a new Android
+release.
+
+1) To port bluetoothd to a new release of Android, update the makefile
+   in src/ to include support for the new release.
+
+2) If Bluedroid interfaces changed or you want to support new features,
+   you'll have to update the HAL protocol.
+
+2a) First pick a version of the HAL protocol at
+
+  https://git.kernel.org/cgit/bluetooth/bluez.git/tree/android/hal-ipc-api.txt
+
+2b) Implement support for this version *without* breaking support for
+    older releases. Bluetoothd uses a specific version of the HAL protocol
+    for each Android release. That ensures long-term stability portability.
+
+3) Submit your changes to Mozilla for inclusion in the official source
+   code repository. If you're unsure how to do this, you can ask in
+
+     dev-bluetooth@lists.mozilla.org
+
+   or
+
+     dev-b2g@lists.mozilla.org
+
+   about the current procedure.
