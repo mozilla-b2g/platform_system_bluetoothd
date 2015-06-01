@@ -19,13 +19,16 @@
 #include <fdio/timer.h>
 #include <hardware/bluetooth.h>
 #include <hardware_legacy/power.h>
+#include <pthread.h>
 #include <stdlib.h>
 #include <sys/epoll.h>
-#include "compiler.h"
-#include "log.h"
+#include <sys/queue.h>
 #include "bt-proto.h"
 #include "bt-pdubuf.h"
 #include "bt-core-io.h"
+#include "compiler.h"
+#include "log.h"
+#include "sdpsrvc.h"
 
 enum {
   /* commands/responses */
@@ -65,6 +68,9 @@ enum {
   OPCODE_LE_TEST_MODE_NTF = 0x8b
 };
 
+#define ARRAY_LENGTH(_array) \
+  ( sizeof(_array) / sizeof((_array)[0]) )
+
 static void (*send_pdu)(struct pdu_wbuf* wbuf);
 static bluetooth_device_t*   bt_device;
 static const bt_interface_t* bt_interface;
@@ -81,6 +87,159 @@ send_ntf_pdu(void* data)
   return IO_OK;
 }
 
+/*
+ * Bug 1142007: The function |get_remote_service_record| does not return a
+ * useful result in its callback. Thus we have to work around the problem.
+ *
+ * Before calling |get_remote_service_record|, we store its parameters in
+ * a queue. After having receiving the service record, we copy the stored
+ * UUID into the result structure. Gecko will then be able to match call
+ * and result.
+ */
+
+struct get_remote_service_record_params {
+  TAILQ_ENTRY(get_remote_service_record_params) q;
+  bt_bdaddr_t bdaddr;
+  bt_uuid_t uuid;
+};
+
+TAILQ_HEAD(get_remote_service_record_q_head,
+           get_remote_service_record_params);
+
+struct get_remote_service_record_q {
+  pthread_mutex_t lock;
+  struct get_remote_service_record_q_head head;
+};
+
+#define GET_REMOTE_SERVICE_RECORD_Q_INITIALIZER(_q) \
+  { \
+    .lock = PTHREAD_MUTEX_INITIALIZER, \
+    .head = TAILQ_HEAD_INITIALIZER((_q).head) \
+  }
+
+static struct get_remote_service_record_q get_remote_service_record_q =
+  GET_REMOTE_SERVICE_RECORD_Q_INITIALIZER(get_remote_service_record_q);
+
+static struct get_remote_service_record_params*
+alloc_get_remote_service_record_params(void)
+{
+  struct get_remote_service_record_params* params;
+
+  params = malloc(sizeof(*params));
+  if (!params){
+    ALOGE_ERRNO("malloc");
+    return NULL;
+  }
+  return params;
+}
+
+static void
+free_get_remote_service_record_params(
+  struct get_remote_service_record_params* params)
+{
+  free(params);
+}
+
+static struct get_remote_service_record_params*
+store_get_remote_service_record_params(const bt_bdaddr_t* bdaddr,
+                                       const bt_uuid_t* uuid)
+{
+  struct get_remote_service_record_params* params;
+  int err;
+
+  assert(bdaddr);
+  assert(uuid);
+
+  params = alloc_get_remote_service_record_params();
+  if (!params){
+    return NULL;
+  }
+  memcpy(&params->bdaddr, bdaddr, sizeof(params->bdaddr));
+  memcpy(&params->uuid, uuid, sizeof(params->uuid));
+
+  err = pthread_mutex_lock(&get_remote_service_record_q.lock);
+  if (err) {
+    ALOGE_ERRNO_NO("pthread_mutex_lock", err);
+    free_get_remote_service_record_params(params);
+    return NULL;
+  }
+
+  TAILQ_INSERT_TAIL(&get_remote_service_record_q.head, params, q);
+
+  err = pthread_mutex_unlock(&get_remote_service_record_q.lock);
+  if (err) {
+    ALOGW_ERRNO_NO("pthread_mutex_unlock", err);
+  }
+
+  return params;
+}
+
+static struct get_remote_service_record_params*
+fetch_get_remote_service_record_params(const bt_bdaddr_t* bdaddr)
+{
+  int err;
+  struct get_remote_service_record_params* params;
+
+  assert(bdaddr);
+
+  err = pthread_mutex_lock(&get_remote_service_record_q.lock);
+  if (err) {
+    ALOGE_ERRNO_NO("pthread_mutex_lock", err);
+    return NULL;
+  }
+
+  params = TAILQ_FIRST(&get_remote_service_record_q.head);
+
+  while (params) {
+    if (!memcmp(&params->bdaddr, bdaddr, sizeof(params->bdaddr))) {
+      break;
+    }
+    params = TAILQ_NEXT(params, q);
+  }
+
+  if (params) {
+    TAILQ_REMOVE(&get_remote_service_record_q.head, params, q);
+  }
+
+  err = pthread_mutex_unlock(&get_remote_service_record_q.lock);
+  if (err) {
+    ALOGW_ERRNO_NO("pthread_mutex_unlock", err);
+  }
+
+  return params;
+}
+
+static void
+remove_get_remote_service_record_params(
+  struct get_remote_service_record_params* params)
+{
+  int err;
+
+  assert(params);
+
+  err = pthread_mutex_lock(&get_remote_service_record_q.lock);
+  if (err) {
+    ALOGE_ERRNO_NO("pthread_mutex_lock", err);
+    /* We'll be leaking |params| here, but that's probably better
+     * than accessing the parameter queue in an unsyncronized way.
+     */
+    return;
+  }
+
+  TAILQ_REMOVE(&get_remote_service_record_q.head, params, q);
+
+  err = pthread_mutex_unlock(&get_remote_service_record_q.lock);
+  if (err) {
+    ALOGW_ERRNO_NO("pthread_mutex_unlock", err);
+  }
+
+  free_get_remote_service_record_params(params);
+}
+
+/*
+ * Properties handling
+ */
+
 static unsigned long
 properties_length(int num_properties, const bt_property_t* properties)
 {
@@ -93,6 +252,70 @@ properties_length(int num_properties, const bt_property_t* properties)
     len += properties[i].len;
   }
   return len;
+}
+
+static void
+fix_properties(const bt_bdaddr_t* remote_addr,
+               int num_properties, bt_property_t* properties)
+{
+  static const bt_uuid_t uuid_zero; /* filled with zeros */
+
+  int i;
+
+  for (i = 0; i < num_properties; ++i) {
+    if (properties[i].type == BT_PROPERTY_SERVICE_RECORD) {
+
+      /* Bug 1142007: BT_PROPERTY_SERVICE_RECORD returns
+       *
+       *  {
+       *    .uuid = 0,
+       *    .channel = SCN,
+       *    .name = "\0"
+       *  }
+       *
+       * for every remote service. We replace the UUID with
+       * the one we asked for in |get_remote_service_record|.
+       */
+
+      struct get_remote_service_record_params* params;
+      bt_service_record_t* rec;
+
+      params = fetch_get_remote_service_record_params(remote_addr);
+      if (!params) {
+        ALOGW("no parameters for BT_PROPERTY_SERVICE_RECORD stored");
+        continue; /* no params stored; send record as-is */
+      }
+
+      rec = properties[i].val;
+
+      if (memcmp(&uuid_zero, &rec->uuid, sizeof(uuid_zero))) {
+        free_get_remote_service_record_params(params);
+        continue; /* record contains non-zero UUID; nothing to fix */
+      }
+
+      /* We replace the property's UUID with the one we stored
+       * for |get_remote_service_record|. That will make Gecko
+       * recognize the notification correctly. The channel is
+       * left as it is. We can set an arbitrary string for the
+       * name.
+       *
+       * Remote devices can create their own names for services
+       * they provide. We have no way of knowing them, so we set
+       * the service's name as defined by the SDP spec and use
+       * "\0" for any other service. Applications can at least
+       * detect this case easily and use a generic string.
+       */
+
+      memcpy(&rec->uuid, &params->uuid, sizeof(rec->uuid));
+      strncpy(rec->name,
+              lookup_service_name_by_uuid16(
+                UUID16(rec->uuid.uu[2], rec->uuid.uu[3]), ""),
+              sizeof(rec->name));
+      rec->name[ARRAY_LENGTH(rec->name) - 1] = '\0'; /* always terminate */
+
+      free_get_remote_service_record_params(params);
+    }
+  }
 }
 
 /*
@@ -209,6 +432,8 @@ remote_device_properties_cb(bt_status_t status,
                                 &aligned_properties);
   if (!properties)
     return;
+
+  fix_properties(bd_addr, num_properties, properties);
 
   wbuf = create_pdu_wbuf(1 + /* status */
                          6 + /* address */
@@ -831,6 +1056,7 @@ get_remote_service_record(const struct pdu* cmd)
   bt_bdaddr_t remote_addr;
   bt_uuid_t uuid;
   struct pdu_wbuf* wbuf;
+  struct get_remote_service_record_params* params;
   int status;
 
   assert(bt_interface);
@@ -846,6 +1072,12 @@ get_remote_service_record(const struct pdu* cmd)
   if (!wbuf)
     return BT_STATUS_NOMEM;
 
+  params = store_get_remote_service_record_params(&remote_addr, &uuid);
+  if (!params) {
+    status = BT_STATUS_NOMEM;
+    goto err_store_get_remote_service_record_params;
+  }
+
   status = bt_interface->get_remote_service_record(&remote_addr, &uuid);
   if (status != BT_STATUS_SUCCESS)
     goto err_bt_interface_get_remote_service_record;
@@ -855,6 +1087,8 @@ get_remote_service_record(const struct pdu* cmd)
 
   return BT_STATUS_SUCCESS;
 err_bt_interface_get_remote_service_record:
+  remove_get_remote_service_record_params(params);
+err_store_get_remote_service_record_params:
   cleanup_pdu_wbuf(wbuf);
   return status;
 }
