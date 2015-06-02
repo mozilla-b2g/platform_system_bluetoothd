@@ -20,6 +20,7 @@ bluetoothd_SRC_FILES    := $(bluetoothd_SRC_FILES_$(PLATFORM_SDK_VERSION)) \
                            core.c \
                            core-io.c \
                            main.c \
+                           sdpsrvc.c \
                            service.c
 
 ifeq ($(strip $(bluetoothd_SRC_FILES_$(PLATFORM_SDK_VERSION))),)
