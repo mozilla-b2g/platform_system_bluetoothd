@@ -25,7 +25,8 @@ enum {
   SERVICE_BT_SOCK = 0x02,
   SERVICE_BT_HF = 0x05,
   SERVICE_BT_AV = 0x06,
-  SERVICE_BT_RC = 0x08
+  SERVICE_BT_RC = 0x08,
+  SERVICE_BT_GATT = 0x09
 };
 
 struct pdu {
@@ -90,3 +91,6 @@ append_bt_bdaddr_t(struct pdu* pdu, const bt_bdaddr_t* addr);
 
 long
 append_bt_bdname_t(struct pdu* pdu, const bt_bdname_t* name);
+
+long
+append_bt_uuid_t(struct pdu* pdu, const bt_uuid_t* uuid);
