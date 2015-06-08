@@ -163,7 +163,7 @@ static long
 read_btgatt_gatt_id_t(const struct pdu* pdu, unsigned long offset,
                       btgatt_gatt_id_t* gatt_id)
 {
-  long off = read_bt_uuid_t(pdu, offset, &gatt_id->uuid);
+  long off = read_bt_gatt_uuid_t(pdu, offset, &gatt_id->uuid);
   if (off < 0) {
     return -1;
   }
@@ -199,7 +199,7 @@ read_btgatt_test_params_t(const struct pdu* pdu, unsigned long offset,
   if (off < 0) {
     return -1;
   }
-  off = read_bt_uuid_t(pdu, off, params->uuid1);
+  off = read_bt_gatt_uuid_t(pdu, off, params->uuid1);
   if (off < 0) {
     return -1;
   }
@@ -211,7 +211,7 @@ read_btgatt_test_params_t(const struct pdu* pdu, unsigned long offset,
 static long
 append_btgatt_gatt_id_t(struct pdu* pdu, const btgatt_gatt_id_t* gatt_id)
 {
-  if (append_bt_uuid_t(pdu, &gatt_id->uuid) < 0)
+  if (append_bt_gatt_uuid_t(pdu, &gatt_id->uuid) < 0)
     return -1;
   return append_to_pdu(pdu, "C", gatt_id->inst_id);
 }
@@ -293,7 +293,7 @@ client_register_client_cb(int status, int client_if, bt_uuid_t* app_uuid)
   init_pdu(&wbuf->buf.pdu, SERVICE_BT_GATT, OPCODE_CLIENT_REGISTER_NTF);
   if ((append_to_pdu(&wbuf->buf.pdu, "ii", (int32_t)status,
                                            (int32_t)client_if) < 0) ||
-      (append_bt_uuid_t(&wbuf->buf.pdu, app_uuid) < 0))
+      (append_bt_gatt_uuid_t(&wbuf->buf.pdu, app_uuid) < 0))
     goto cleanup;
 
   if (run_task(send_ntf_pdu, wbuf) < 0)
@@ -1187,7 +1187,7 @@ server_register_server_cb(int status, int server_if,
   init_pdu(&wbuf->buf.pdu, SERVICE_BT_GATT, OPCODE_SERVER_REGISTER_NTF);
   if ((append_to_pdu(&wbuf->buf.pdu, "ii", (int32_t)status,
                                            (int32_t)server_if) < 0) ||
-      (append_bt_uuid_t(&wbuf->buf.pdu, app_uuid) < 0))
+      (append_bt_gatt_uuid_t(&wbuf->buf.pdu, app_uuid) < 0))
     goto cleanup;
 
   if (run_task(send_ntf_pdu, wbuf) < 0)
@@ -1305,7 +1305,7 @@ server_characteristic_added_cb(int status, int server_if, bt_uuid_t* uuid,
            OPCODE_SERVER_CHARACTERISTIC_ADDED_NTF);
   if ((append_to_pdu(&wbuf->buf.pdu, "ii", (int32_t)status,
                                            (int32_t)server_if) < 0) ||
-      (append_bt_uuid_t(&wbuf->buf.pdu, uuid) < 0) ||
+      (append_bt_gatt_uuid_t(&wbuf->buf.pdu, uuid) < 0) ||
       (append_to_pdu(&wbuf->buf.pdu, "ii", (int32_t)srvc_handle,
                                            (int32_t)char_handle) < 0))
     goto cleanup;
@@ -1337,7 +1337,7 @@ server_descriptor_added_cb(int status, int server_if, bt_uuid_t* uuid,
            OPCODE_SERVER_DESCRIPTOR_ADDED_NTF);
   if ((append_to_pdu(&wbuf->buf.pdu, "ii", (int32_t)status,
                                            (int32_t)server_if) < 0) ||
-      (append_bt_uuid_t(&wbuf->buf.pdu, uuid) < 0) ||
+      (append_bt_gatt_uuid_t(&wbuf->buf.pdu, uuid) < 0) ||
       (append_to_pdu(&wbuf->buf.pdu, "ii", (int32_t)srvc_handle,
                                            (int32_t)descr_handle) < 0))
     goto cleanup;
@@ -1656,7 +1656,7 @@ opcode_client_register(const struct pdu* cmd)
   assert(btgatt_interface->client);
   assert(btgatt_interface->client->register_client);
 
-  if (read_bt_uuid_t(cmd, 0, &uuid) < 0) {
+  if (read_bt_gatt_uuid_t(cmd, 0, &uuid) < 0) {
     return BT_STATUS_PARM_INVALID;
   }
   wbuf = create_pdu_wbuf(0, 0, NULL);
@@ -1956,7 +1956,7 @@ opcode_client_search_service(const struct pdu* cmd)
     return BT_STATUS_PARM_INVALID;
   }
   if (filtered) {
-    if (read_bt_uuid_t(cmd, off, &uuid) < 0) {
+    if (read_bt_gatt_uuid_t(cmd, off, &uuid) < 0) {
       return BT_STATUS_PARM_INVALID;
     }
     uuid_p = &uuid;
@@ -2808,11 +2808,11 @@ opcode_client_scan_filter_add_remove(const struct pdu* cmd)
   if (off < 0) {
     return BT_STATUS_PARM_INVALID;
   }
-  off= read_bt_uuid_t(cmd, off, &uuid);
+  off= read_bt_gatt_uuid_t(cmd, off, &uuid);
   if (off < 0) {
     return BT_STATUS_PARM_INVALID;
   }
-  off= read_bt_uuid_t(cmd, off, &uuid_mask);
+  off= read_bt_gatt_uuid_t(cmd, off, &uuid_mask);
   if (off < 0) {
     return BT_STATUS_PARM_INVALID;
   }
@@ -3428,7 +3428,7 @@ opcode_server_register(const struct pdu* cmd)
   assert(btgatt_interface->server);
   assert(btgatt_interface->server->register_server);
 
-  if (read_bt_uuid_t(cmd, 0, &uuid) < 0) {
+  if (read_bt_gatt_uuid_t(cmd, 0, &uuid) < 0) {
     return BT_STATUS_PARM_INVALID;
   }
   wbuf = create_pdu_wbuf(0, 0, NULL);
@@ -3699,7 +3699,7 @@ opcode_server_add_characteristic(const struct pdu* cmd)
   if (off < 0) {
     return BT_STATUS_PARM_INVALID;
   }
-  off = read_bt_uuid_t(cmd, off, &uuid);
+  off = read_bt_gatt_uuid_t(cmd, off, &uuid);
   if (off < 0) {
     return BT_STATUS_PARM_INVALID;
   }
@@ -3744,7 +3744,7 @@ opcode_server_add_descriptor(const struct pdu* cmd)
   if (off < 0) {
     return BT_STATUS_PARM_INVALID;
   }
-  off = read_bt_uuid_t(cmd, off, &uuid);
+  off = read_bt_gatt_uuid_t(cmd, off, &uuid);
   if (off < 0) {
     return BT_STATUS_PARM_INVALID;
   }

@@ -70,6 +70,26 @@ memdiff(const void* low, const void* high)
   return ((const char*)high) - ((const char*)low);
 }
 
+static void
+memreverse(const void* mem, size_t total_size, size_t element_size)
+{
+  size_t i, j;
+  size_t count = total_size / element_size;
+  char* buffer = (char*)mem;
+  char temp;
+
+  assert(mem);
+  assert(total_size % element_size == 0);
+
+  for (i = 0; i < count / 2; ++i) {
+    for (j = 0; j < element_size; ++j) {
+      temp = buffer[i * element_size + j];
+      buffer[i * element_size + j] = buffer[(count - i - 1) * element_size + j];
+      buffer[(count - i - 1) * element_size + j] = temp;
+    }
+  }
+}
+
 static long
 read_pdu_at_va(const struct pdu* pdu, unsigned long offset,
                const char* fmt, va_list ap)
@@ -222,6 +242,22 @@ read_bt_uuid_t(const struct pdu* pdu, unsigned long offset, bt_uuid_t* uuid)
   assert(uuid);
 
   return read_pdu_at(pdu, offset, "m", uuid->uu, (size_t)16);
+}
+
+long
+read_bt_gatt_uuid_t(const struct pdu* pdu, unsigned long offset, bt_uuid_t* uuid)
+{
+  long ret;
+
+  assert(uuid);
+  assert(sizeof(uuid->uu) == 16);
+
+  ret = read_bt_uuid_t(pdu, offset, uuid);
+
+  // workaround for reversed UUID of GATT from Android HAL
+  memreverse((const void*)uuid->uu, sizeof(uuid->uu), sizeof(uuid->uu[0]));
+
+  return ret;
 }
 
 long
@@ -434,4 +470,16 @@ append_bt_uuid_t(struct pdu* pdu, const bt_uuid_t* uuid)
   assert(sizeof(uuid->uu) == 16);
 
   return append_to_pdu(pdu, "m", uuid->uu, sizeof(uuid->uu));
+}
+
+long
+append_bt_gatt_uuid_t(struct pdu* pdu, const bt_uuid_t* uuid)
+{
+  assert(uuid);
+  assert(sizeof(uuid->uu) == 16);
+
+  // workaround for reversed UUID of GATT from Android HAL
+  memreverse((const void*)uuid->uu, sizeof(uuid->uu), sizeof(uuid->uu[0]));
+
+  return append_bt_uuid_t(pdu, uuid);
 }
