@@ -66,6 +66,9 @@ long
 read_bt_uuid_t(const struct pdu* pdu, unsigned long offset, bt_uuid_t* uuid);
 
 long
+read_bt_gatt_uuid_t(const struct pdu* pdu, unsigned long offset, bt_uuid_t* uuid);
+
+long
 read_bt_pin_code_t(const struct pdu* pdu, unsigned long off,
                    bt_pin_code_t* pin_code);
 
@@ -94,3 +97,6 @@ append_bt_bdname_t(struct pdu* pdu, const bt_bdname_t* name);
 
 long
 append_bt_uuid_t(struct pdu* pdu, const bt_uuid_t* uuid);
+
+long
+append_bt_gatt_uuid_t(struct pdu* pdu, const bt_uuid_t* uuid);
