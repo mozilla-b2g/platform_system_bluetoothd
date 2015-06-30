@@ -307,17 +307,26 @@ cleanup:
 static void
 client_scan_result_cb(bt_bdaddr_t* bd_addr, int rssi, uint8_t* adv_data)
 {
-  size_t len;
   struct pdu_wbuf* wbuf;
+  size_t len = 0;
 
   if (adv_data) {
-    len = strlen((const char*)adv_data);
+    /* Bluetooth Core Specification, Volume 3, Part C, Section 11
+     * Each AD structure shall have a Length field of one octet, which
+     * contains the Length value, and a Data field of Length octets.
+     * | len_1 | data_1 | len_2 | data_2 | ... | len_n | data_n | 000...000b |
+     *
+     * Bluedroid might also carry EIR Data in |adv_data| parameter. Since
+     * EIR Data and AD Structure use the same format to carry information,
+     * we parse their length in the same way to have an accurate total
+     * length of |adv_data|. */
+    while (adv_data[len]) {
+      len += adv_data[len];
+    }
     if (len > USHRT_MAX) {
       ALOGE("data too long");
       return;
     }
-  } else {
-    len = 0;
   }
 
   wbuf = create_pdu_wbuf(6 + /* address */
