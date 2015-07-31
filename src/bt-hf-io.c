@@ -56,7 +56,8 @@ enum {
   OPCODE_COPS_CMD_NTF = 0x8d,
   OPCODE_CLCC_CMD_NTF = 0x8e,
   OPCODE_UNKNOWN_AT_CMD_NTF = 0x8f,
-  OPCODE_KEY_PRESSED_CMD_NTF =0x90
+  OPCODE_KEY_PRESSED_CMD_NTF = 0x90,
+  OPCODE_WBS_NTF = 0x91
 };
 
 static void (*send_pdu)(struct pdu_wbuf* wbuf);
@@ -345,10 +346,28 @@ cleanup:
 
 #if ANDROID_VERSION >= 21
 static void
-wbs_cb(bthf_wbs_config_t wbs ATTRIBS(UNUSED),
-       bt_bdaddr_t* bd_addr ATTRIBS(UNUSED))
+wbs_cb(bthf_wbs_config_t wbs, bt_bdaddr_t* bd_addr)
 {
-  /* TODO: Support HFP 1.6 WBS */
+  struct pdu_wbuf* wbuf;
+
+  wbuf = create_pdu_wbuf(1 + /* WBS */
+                         6, /* address */
+                         0, NULL);
+  if (!wbuf)
+    return;
+
+  init_pdu(&wbuf->buf.pdu, SERVICE_BT_HF, OPCODE_WBS_NTF);
+  if (append_to_pdu(&wbuf->buf.pdu, "C", (uint8_t)wbs) < 0)
+    goto cleanup;
+  if (append_bt_bdaddr_t(&wbuf->buf.pdu, bd_addr) < 0)
+    goto cleanup;
+
+  if (run_task(send_ntf_pdu, wbuf) < 0)
+    goto cleanup;
+
+  return;
+cleanup:
+  cleanup_pdu_wbuf(wbuf);
 }
 #endif
 
