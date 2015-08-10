@@ -30,6 +30,8 @@
 #include "bt-gatt-io.h"
 #include "version.h"
 
+#define MAX_ADV_DATA_LEN 62
+
 enum {
   /* commands/responses */
   OPCODE_CLIENT_REGISTER = 0x01,
@@ -311,7 +313,8 @@ client_scan_result_cb(bt_bdaddr_t* bd_addr, int rssi, uint8_t* adv_data)
   size_t len = 0;
 
   if (adv_data) {
-    /* Bluetooth Core Specification, Volume 3, Part C, Section 11
+    /**
+     * Bluetooth Core Specification, Volume 3, Part C, Section 11
      * Each AD structure shall have a Length field of one octet, which
      * contains the Length value, and a Data field of Length octets.
      * | len_1 | data_1 | len_2 | data_2 | ... | len_n | data_n | 000...000b |
@@ -319,8 +322,20 @@ client_scan_result_cb(bt_bdaddr_t* bd_addr, int rssi, uint8_t* adv_data)
      * Bluedroid might also carry EIR Data in |adv_data| parameter. Since
      * EIR Data and AD Structure use the same format to carry information,
      * we parse their length in the same way to have an accurate total
-     * length of |adv_data|. */
+     * length of |adv_data|.
+     *
+     * Note: The maximum size of |adv_data| is 62 bytes based on Bluedroid's
+     * implementation. Although the size of EIR data is 240 bytes, only the
+     * first 62 bytes will be carried here.
+     * Hence, we overwrite the length of |adv_data| as 62 and stop parsing
+     * |adv_data| if the length of |adv_data| exceeds the maximum size.
+     * See bug 1190751 for detailed information.
+     */
     while (adv_data[len]) {
+      if (len + adv_data[len] > MAX_ADV_DATA_LEN) {
+        len = MAX_ADV_DATA_LEN;
+        break;
+      }
       len += adv_data[len];
     }
     if (len > USHRT_MAX) {
