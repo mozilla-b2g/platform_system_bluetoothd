@@ -3565,7 +3565,7 @@ err_btgatt_interface_server_connect:
   if (off < 0) {
     return BT_STATUS_PARM_INVALID;
   }
-  if (read_pdu_at(cmd, off, "Ci", &is_direct) < 0) {
+  if (read_pdu_at(cmd, off, "C", &is_direct) < 0) {
     return BT_STATUS_PARM_INVALID;
   }
   wbuf = create_pdu_wbuf(0, 0, NULL);
