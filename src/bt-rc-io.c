@@ -22,6 +22,7 @@
 #include <fdio/task.h>
 #include <hardware/bluetooth.h>
 #include <hardware/bt_rc.h>
+#include <stdlib.h>
 #include "compiler.h"
 #include "log.h"
 #include "bt-proto.h"

@@ -16,6 +16,7 @@
 
 #include <assert.h>
 #include <stdarg.h>
+#include <stdlib.h>
 #include "log.h"
 #include "bt-proto.h"
 
