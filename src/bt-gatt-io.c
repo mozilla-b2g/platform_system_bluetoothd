@@ -2635,16 +2635,16 @@ opcode_client_set_advertising_data(const struct pdu* cmd)
   assert(btgatt_interface->client);
   assert(btgatt_interface->client->set_adv_data);
 
-  off = read_pdu_at(cmd, 0, "iCCCiiiS", &server_if,
-                                        &set_scan_rsp,
-                                        &include_name,
-                                        &include_txpower,
-                                        &min_ival,
-                                        &max_ival,
-                                        &appearence,
-                                        &manu_len,
-                                        &data_len,
-                                        &uuid_len);
+  off = read_pdu_at(cmd, 0, "iCCCiiiSSS", &server_if,
+                                          &set_scan_rsp,
+                                          &include_name,
+                                          &include_txpower,
+                                          &min_ival,
+                                          &max_ival,
+                                          &appearence,
+                                          &manu_len,
+                                          &data_len,
+                                          &uuid_len);
   if (off < 0) {
     return BT_STATUS_PARM_INVALID;
   }
