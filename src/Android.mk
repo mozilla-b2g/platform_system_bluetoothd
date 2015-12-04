@@ -5,7 +5,6 @@ include $(CLEAR_VARS)
 bluetoothd_SRC_FILES_17 := bt-av-io.c \
                            bt-core-io.c \
                            bt-hf-io.c \
-                           bt-pan-io.c \
                            bt-sock-io.c
 bluetoothd_SRC_FILES_18 := $(bluetoothd_SRC_FILES_17) \
                            bt-rc-io.c
