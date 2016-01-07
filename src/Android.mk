@@ -34,6 +34,11 @@ LOCAL_C_INCLUDES := system/libfdio/include
 LOCAL_CFLAGS := -DANDROID_VERSION=$(PLATFORM_SDK_VERSION) \
                 -DANDROID_VERSION_CONST=$(ANDROID_VERSION_CONST) \
                 -Wall -Werror
+
+ifeq ($(strip $(BOARD_BLUETOOTH_BDROID_USE_CAF_EXTENSIONS)),true)
+LOCAL_CFLAGS += -DQ_BLUETOOTH=1
+endif
+
 LOCAL_SHARED_LIBRARIES := libfdio \
                           libhardware \
                           libhardware_legacy \
