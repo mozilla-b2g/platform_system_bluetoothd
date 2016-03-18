@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2014-2015  Mozilla Foundation
+ * Copyright (C) 2014-2016  Mozilla Foundation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,6 +16,7 @@
 
 #include <assert.h>
 #include <fcntl.h>
+#include <pdu/pdubuf.h>
 #include <sys/epoll.h>
 #include <sys/types.h>
 #include <sys/socket.h>
@@ -28,7 +29,6 @@
 #include "log.h"
 #include "wakelock.h"
 #include "bt-proto.h"
-#include "bt-pdubuf.h"
 #include "service.h"
 #include "core.h"
 #include "core-io.h"
@@ -58,7 +58,7 @@ io_state_err(struct io_state* io_state)
   assert(io_state);
 
   if (io_state->rbuf) {
-    cleanup_pdu_rbuf(io_state->rbuf);
+    destroy_pdu_rbuf(io_state->rbuf);
     io_state->rbuf = NULL;
   }
   remove_fd_from_epoll_loop(io_state->fd);
@@ -73,7 +73,7 @@ io_state_hup(struct io_state* io_state)
   assert(io_state);
 
   if (io_state->rbuf) {
-    cleanup_pdu_rbuf(io_state->rbuf);
+    destroy_pdu_rbuf(io_state->rbuf);
     io_state->rbuf = NULL;
   }
   remove_fd_from_epoll_loop(io_state->fd);
@@ -160,7 +160,7 @@ io_state_out(struct io_state* io_state)
     STAILQ_REMOVE_HEAD(&io_state->sendq, stailq);
 
     send_pdu_wbuf(wbuf, io_state->fd, 0);
-    cleanup_pdu_wbuf(wbuf);
+    destroy_pdu_wbuf(wbuf);
   }
 
   if (STAILQ_EMPTY(&io_state->sendq)) {
@@ -209,7 +209,7 @@ io_state_send(struct io_state* io_state, struct pdu_wbuf* wbuf)
   return 0;
 err_add_fd_to_epoll_loop:
   STAILQ_REMOVE(&io_state->sendq, wbuf, pdu_wbuf, stailq);
-  cleanup_pdu_wbuf(wbuf);
+  destroy_pdu_wbuf(wbuf);
   return -1;
 }
 

@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2014-2015  Mozilla Foundation
+ * Copyright (C) 2014-2016  Mozilla Foundation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,12 +17,12 @@
 #include <assert.h>
 #include <hardware/bluetooth.h>
 #include <hardware/bt_sock.h>
+#include <pdu/pdubuf.h>
 #include <string.h>
 #include <sys/socket.h>
 #include "compiler.h"
 #include "log.h"
 #include "bt-proto.h"
-#include "bt-pdubuf.h"
 #include "bt-core-io.h"
 #include "bt-sock-io.h"
 
@@ -123,7 +123,7 @@ opcode_listen(const struct pdu* cmd)
 
   return BT_STATUS_SUCCESS;
 err_bt_sock_listen:
-  cleanup_pdu_wbuf(wbuf);
+  destroy_pdu_wbuf(wbuf);
   return status;
 }
 
@@ -168,7 +168,7 @@ opcode_connect(const struct pdu* cmd)
 
   return BT_STATUS_SUCCESS;
 err_bt_sock_connect:
-  cleanup_pdu_wbuf(wbuf);
+  destroy_pdu_wbuf(wbuf);
   return status;
 }
 

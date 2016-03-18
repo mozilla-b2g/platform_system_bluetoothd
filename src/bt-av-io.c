@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2014-2015  Mozilla Foundation
+ * Copyright (C) 2014-2016  Mozilla Foundation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,10 +18,10 @@
 #include <fdio/task.h>
 #include <hardware/bluetooth.h>
 #include <hardware/bt_av.h>
+#include <pdu/pdubuf.h>
 #include "compiler.h"
 #include "log.h"
 #include "bt-proto.h"
-#include "bt-pdubuf.h"
 #include "bt-core-io.h"
 #include "bt-av-io.h"
 
@@ -75,7 +75,7 @@ connection_state_cb(btav_connection_state_t state, bt_bdaddr_t* bd_addr)
 
   return;
 cleanup:
-  cleanup_pdu_wbuf(wbuf);
+  destroy_pdu_wbuf(wbuf);
 }
 
 static void
@@ -99,7 +99,7 @@ audio_state_cb(btav_audio_state_t state, bt_bdaddr_t* bd_addr)
 
   return;
 cleanup:
-  cleanup_pdu_wbuf(wbuf);
+  destroy_pdu_wbuf(wbuf);
 }
 
 #if ANDROID_VERSION >= 21
@@ -126,7 +126,7 @@ audio_config_cb(bt_bdaddr_t* bd_addr, uint32_t sample_rate,
 
   return;
 cleanup:
-  cleanup_pdu_wbuf(wbuf);
+  destroy_pdu_wbuf(wbuf);
 }
 #endif
 
@@ -160,7 +160,7 @@ opcode_connect(const struct pdu* cmd)
 
   return BT_STATUS_SUCCESS;
 err_btav_interface_connect:
-  cleanup_pdu_wbuf(wbuf);
+  destroy_pdu_wbuf(wbuf);
   return status;
 }
 
@@ -190,7 +190,7 @@ opcode_disconnect(const struct pdu* cmd)
 
   return BT_STATUS_SUCCESS;
 err_btav_interface_disconnect:
-  cleanup_pdu_wbuf(wbuf);
+  destroy_pdu_wbuf(wbuf);
   return status;
 }
 

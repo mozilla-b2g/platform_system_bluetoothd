@@ -17,7 +17,6 @@ bluetoothd_SRC_FILES_22 := $(bluetoothd_SRC_FILES_21)
 bluetoothd_SRC_FILES    := $(bluetoothd_SRC_FILES_$(PLATFORM_SDK_VERSION)) \
                            bt-io.c \
                            bt-proto.c \
-                           bt-pdubuf.c \
                            core.c \
                            core-io.c \
                            main.c \
