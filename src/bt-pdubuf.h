@@ -1,5 +1,6 @@
 /*
  * Copyright (C) 2014  Mozilla Foundation
+ * Copyright (C) 2016  Mozilla Foundation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,6 +17,7 @@
 
 #pragma once
 
+#include <pdu/pdu.h>
 #include <sys/queue.h>
 #include <sys/socket.h>
 #include "bt-proto.h"
