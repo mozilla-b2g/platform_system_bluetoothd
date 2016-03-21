@@ -18,11 +18,11 @@
 #include <fdio/task.h>
 #include <hardware/bluetooth.h>
 #include <hardware/bt_hh.h>
+#include <pdu/pdubuf.h>
 #include <stdlib.h>
 #include "compiler.h"
 #include "log.h"
 #include "bt-proto.h"
-#include "bt-pdubuf.h"
 #include "bt-core-io.h"
 #include "bt-hh-io.h"
 
@@ -154,7 +154,7 @@ connection_state_cb(bt_bdaddr_t* bd_addr, bthh_connection_state_t state)
 
   return;
 cleanup:
-  cleanup_pdu_wbuf(wbuf);
+  destroy_pdu_wbuf(wbuf);
 }
 
 static void
@@ -178,7 +178,7 @@ hid_info_cb(bt_bdaddr_t* bd_addr, bthh_hid_info_t hid_info)
 
   return;
 cleanup:
-  cleanup_pdu_wbuf(wbuf);
+  destroy_pdu_wbuf(wbuf);
 }
 
 static void
@@ -205,7 +205,7 @@ protocol_mode_cb(bt_bdaddr_t* bd_addr, bthh_status_t hh_status,
 
   return;
 cleanup:
-  cleanup_pdu_wbuf(wbuf);
+  destroy_pdu_wbuf(wbuf);
 }
 
 static void
@@ -231,7 +231,7 @@ idle_time_cb(bt_bdaddr_t* bd_addr, bthh_status_t hh_status, int idle_rate)
 
   return;
 cleanup:
-  cleanup_pdu_wbuf(wbuf);
+  destroy_pdu_wbuf(wbuf);
 }
 
 static void
@@ -260,7 +260,7 @@ get_report_cb(bt_bdaddr_t* bd_addr, bthh_status_t hh_status, uint8_t* rpt_data,
 
   return;
 cleanup:
-  cleanup_pdu_wbuf(wbuf);
+  destroy_pdu_wbuf(wbuf);
 }
 
 static void
@@ -284,7 +284,7 @@ virtual_unplug_cb(bt_bdaddr_t* bd_addr, bthh_status_t hh_status)
 
   return;
 cleanup:
-  cleanup_pdu_wbuf(wbuf);
+  destroy_pdu_wbuf(wbuf);
 }
 
 #if ANDROID_VERSION >= 21
@@ -309,7 +309,7 @@ handshake_cb(bt_bdaddr_t *bd_addr, bthh_status_t hh_status)
 
   return;
 cleanup:
-  cleanup_pdu_wbuf(wbuf);
+  destroy_pdu_wbuf(wbuf);
 }
 #endif
 
@@ -343,7 +343,7 @@ opcode_connect(const struct pdu* cmd)
 
   return BT_STATUS_SUCCESS;
 err_bthh_interface_connect:
-  cleanup_pdu_wbuf(wbuf);
+  destroy_pdu_wbuf(wbuf);
   return status;
 }
 
@@ -373,7 +373,7 @@ opcode_disconnect(const struct pdu* cmd)
 
   return BT_STATUS_SUCCESS;
 err_bthh_interface_disconnect:
-  cleanup_pdu_wbuf(wbuf);
+  destroy_pdu_wbuf(wbuf);
   return status;
 }
 
@@ -403,7 +403,7 @@ opcode_virtual_unplug(const struct pdu* cmd)
 
   return BT_STATUS_SUCCESS;
 err_bthh_interface_virtual_unplug:
-  cleanup_pdu_wbuf(wbuf);
+  destroy_pdu_wbuf(wbuf);
   return status;
 }
 
@@ -439,7 +439,7 @@ opcode_set_info(const struct pdu* cmd)
 
   return BT_STATUS_SUCCESS;
 err_bthh_interface_set_info:
-  cleanup_pdu_wbuf(wbuf);
+  destroy_pdu_wbuf(wbuf);
   return status;
 }
 
@@ -476,7 +476,7 @@ opcode_get_protocol(const struct pdu* cmd)
 
   return BT_STATUS_SUCCESS;
 err_bthh_interface_get_protocol:
-  cleanup_pdu_wbuf(wbuf);
+  destroy_pdu_wbuf(wbuf);
   return status;
 }
 
@@ -513,7 +513,7 @@ opcode_set_protocol(const struct pdu* cmd)
 
   return BT_STATUS_SUCCESS;
 err_bthh_interface_set_protocol:
-  cleanup_pdu_wbuf(wbuf);
+  destroy_pdu_wbuf(wbuf);
   return status;
 }
 
@@ -552,7 +552,7 @@ opcode_get_report(const struct pdu* cmd)
 
   return BT_STATUS_SUCCESS;
 err_bthh_interface_get_report:
-  cleanup_pdu_wbuf(wbuf);
+  destroy_pdu_wbuf(wbuf);
   return status;
 }
 
@@ -607,7 +607,7 @@ opcode_set_report(const struct pdu* cmd)
 
   return BT_STATUS_SUCCESS;
 err_bthh_interface_set_report:
-  cleanup_pdu_wbuf(wbuf);
+  destroy_pdu_wbuf(wbuf);
 err_create_pdu_wbuf:
 err_read_pdu_at:
   free(rpt);
@@ -664,7 +664,7 @@ opcode_send_data(const struct pdu* cmd)
 
   return BT_STATUS_SUCCESS;
 err_bthh_interface_send_data:
-  cleanup_pdu_wbuf(wbuf);
+  destroy_pdu_wbuf(wbuf);
 err_create_pdu_wbuf:
 err_read_pdu_at:
   free(data);

@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2014-2015  Mozilla Foundation
+ * Copyright (C) 2014-2016  Mozilla Foundation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -22,11 +22,11 @@
 #include <fdio/task.h>
 #include <hardware/bluetooth.h>
 #include <hardware/bt_rc.h>
+#include <pdu/pdubuf.h>
 #include <stdlib.h>
 #include "compiler.h"
 #include "log.h"
 #include "bt-proto.h"
-#include "bt-pdubuf.h"
 #include "bt-core-io.h"
 #include "bt-rc-io.h"
 
@@ -336,7 +336,7 @@ get_play_status_cb(void)
 
   return;
 cleanup:
-  cleanup_pdu_wbuf(wbuf);
+  destroy_pdu_wbuf(wbuf);
 }
 
 static void
@@ -355,7 +355,7 @@ list_player_app_attr_cb(void)
 
   return;
 cleanup:
-  cleanup_pdu_wbuf(wbuf);
+  destroy_pdu_wbuf(wbuf);
 }
 
 static void
@@ -377,7 +377,7 @@ list_player_app_values_cb(btrc_player_attr_t attr_id)
 
   return;
 cleanup:
-  cleanup_pdu_wbuf(wbuf);
+  destroy_pdu_wbuf(wbuf);
 }
 
 static void
@@ -401,7 +401,7 @@ get_player_app_value_cb(uint8_t num_attr, btrc_player_attr_t* p_attrs)
 
   return;
 cleanup:
-  cleanup_pdu_wbuf(wbuf);
+  destroy_pdu_wbuf(wbuf);
 }
 
 static void
@@ -425,7 +425,7 @@ get_player_app_attrs_text_cb(uint8_t num_attr, btrc_player_attr_t* p_attrs)
 
   return;
 cleanup:
-  cleanup_pdu_wbuf(wbuf);
+  destroy_pdu_wbuf(wbuf);
 }
 
 static void
@@ -450,7 +450,7 @@ get_player_app_values_text_cb(uint8_t attr_id, uint8_t num_val,
 
   return;
 cleanup:
-  cleanup_pdu_wbuf(wbuf);
+  destroy_pdu_wbuf(wbuf);
 }
 
 static void
@@ -476,7 +476,7 @@ set_player_app_value_cb(btrc_player_settings_t* p_vals)
 
   return;
 cleanup:
-  cleanup_pdu_wbuf(wbuf);
+  destroy_pdu_wbuf(wbuf);
 }
 
 static void
@@ -500,7 +500,7 @@ get_element_attr_cb(uint8_t num_attr, btrc_media_attr_t* p_attrs)
 
   return;
 cleanup:
-  cleanup_pdu_wbuf(wbuf);
+  destroy_pdu_wbuf(wbuf);
 }
 
 static void
@@ -523,7 +523,7 @@ register_notification_cb(btrc_event_id_t event_id, uint32_t param)
 
   return;
 cleanup:
-  cleanup_pdu_wbuf(wbuf);
+  destroy_pdu_wbuf(wbuf);
 }
 
 #if ANDROID_VERSION >= 19
@@ -548,7 +548,7 @@ remote_features_cb(bt_bdaddr_t* bd_addr, btrc_remote_features_t features)
 
   return;
 cleanup:
-  cleanup_pdu_wbuf(wbuf);
+  destroy_pdu_wbuf(wbuf);
 }
 
 static void
@@ -571,7 +571,7 @@ volume_change_cb(uint8_t volume, uint8_t ctype)
 
   return;
 cleanup:
-  cleanup_pdu_wbuf(wbuf);
+  destroy_pdu_wbuf(wbuf);
 }
 
 static void
@@ -594,7 +594,7 @@ passthrough_cmd_cb(int id, int key_state)
 
   return;
 cleanup:
-  cleanup_pdu_wbuf(wbuf);
+  destroy_pdu_wbuf(wbuf);
 }
 #endif
 
@@ -629,7 +629,7 @@ opcode_get_play_status_rsp(const struct pdu* cmd)
 
   return BT_STATUS_SUCCESS;
 err_btrc_interface_get_play_status_rsp:
-  cleanup_pdu_wbuf(wbuf);
+  destroy_pdu_wbuf(wbuf);
   return status;
 }
 
@@ -665,7 +665,7 @@ opcode_list_player_app_attr_rsp(const struct pdu* cmd)
 
   return BT_STATUS_SUCCESS;
 err_btrc_interface_list_player_app_attr_rsp:
-  cleanup_pdu_wbuf(wbuf);
+  destroy_pdu_wbuf(wbuf);
   return status;
 }
 
@@ -701,7 +701,7 @@ opcode_list_player_app_value_rsp(const struct pdu* cmd)
 
   return BT_STATUS_SUCCESS;
 err_btrc_interface_list_player_app_value_rsp:
-  cleanup_pdu_wbuf(wbuf);
+  destroy_pdu_wbuf(wbuf);
   return status;
 }
 
@@ -731,7 +731,7 @@ opcode_get_player_app_value_rsp(const struct pdu* cmd)
 
   return BT_STATUS_SUCCESS;
 err_btrc_interface_get_player_app_value_rsp:
-  cleanup_pdu_wbuf(wbuf);
+  destroy_pdu_wbuf(wbuf);
   return status;
 }
 
@@ -780,7 +780,7 @@ opcode_get_player_app_attr_text_rsp(const struct pdu* cmd)
 
   return BT_STATUS_SUCCESS;
 err_btrc_interface_get_player_app_attr_text_rsp:
-  cleanup_pdu_wbuf(wbuf);
+  destroy_pdu_wbuf(wbuf);
 err_create_pdu_wbuf:
 err_read_btrc_player_setting_text_t_array:
   free(p_attrs);
@@ -832,7 +832,7 @@ opcode_get_player_app_value_text_rsp(const struct pdu* cmd)
 
   return BT_STATUS_SUCCESS;
 err_btrc_interface_get_player_app_value_text_rsp:
-  cleanup_pdu_wbuf(wbuf);
+  destroy_pdu_wbuf(wbuf);
 err_create_pdu_wbuf:
 err_read_btrc_player_setting_text_t_array:
   free(p_attrs);
@@ -884,7 +884,7 @@ opcode_get_element_attr_rsp(const struct pdu* cmd)
 
   return BT_STATUS_SUCCESS;
 err_btrc_interface_get_element_attr_rsp:
-  cleanup_pdu_wbuf(wbuf);
+  destroy_pdu_wbuf(wbuf);
 err_create_pdu_wbuf:
 err_read_btrc_element_attr_val_t_array:
   free(p_attrs);
@@ -917,7 +917,7 @@ opcode_set_player_app_value_rsp(const struct pdu* cmd)
 
   return BT_STATUS_SUCCESS;
 err_btrc_interface_set_player_app_value_rsp:
-  cleanup_pdu_wbuf(wbuf);
+  destroy_pdu_wbuf(wbuf);
   return status;
 }
 
@@ -954,7 +954,7 @@ opcode_register_notification_rsp(const struct pdu* cmd)
 
   return BT_STATUS_SUCCESS;
 err_btrc_interface_register_notification_rsp:
-  cleanup_pdu_wbuf(wbuf);
+  destroy_pdu_wbuf(wbuf);
   return status;
 }
 
@@ -985,7 +985,7 @@ opcode_set_volume(const struct pdu* cmd)
 
   return BT_STATUS_SUCCESS;
 err_btrc_interface_set_volume:
-  cleanup_pdu_wbuf(wbuf);
+  destroy_pdu_wbuf(wbuf);
   return status;
 }
 #endif

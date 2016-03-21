@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2014-2015  Mozilla Foundation
+ * Copyright (C) 2014-2016  Mozilla Foundation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -19,12 +19,12 @@
 #include <fdio/timer.h>
 #include <hardware/bluetooth.h>
 #include <hardware_legacy/power.h>
+#include <pdu/pdubuf.h>
 #include <pthread.h>
 #include <stdlib.h>
 #include <sys/epoll.h>
 #include <sys/queue.h>
 #include "bt-proto.h"
-#include "bt-pdubuf.h"
 #include "bt-core-io.h"
 #include "compiler.h"
 #include "log.h"
@@ -341,7 +341,7 @@ adapter_state_changed_cb(bt_state_t state)
 
   return;
 cleanup:
-  cleanup_pdu_wbuf(wbuf);
+  destroy_pdu_wbuf(wbuf);
 }
 
 static int
@@ -414,7 +414,7 @@ adapter_properties_cb(bt_status_t status, int num_properties,
 
   return;
 cleanup:
-  cleanup_pdu_wbuf(wbuf);
+  destroy_pdu_wbuf(wbuf);
 cleanup_properties:
   free(aligned_properties);
 }
@@ -460,7 +460,7 @@ remote_device_properties_cb(bt_status_t status,
 
   return;
 cleanup:
-  cleanup_pdu_wbuf(wbuf);
+  destroy_pdu_wbuf(wbuf);
 cleanup_properties:
   free(aligned_properties);
 }
@@ -495,7 +495,7 @@ device_found_cb(int num_properties, bt_property_t* properties)
 
   return;
 cleanup:
-  cleanup_pdu_wbuf(wbuf);
+  destroy_pdu_wbuf(wbuf);
 cleanup_properties:
   free(aligned_properties);
 }
@@ -520,7 +520,7 @@ discovery_state_changed_cb(bt_discovery_state_t state)
 
   return;
 cleanup:
-  cleanup_pdu_wbuf(wbuf);
+  destroy_pdu_wbuf(wbuf);
 }
 
 #ifdef Q_BLUETOOTH
@@ -555,7 +555,7 @@ pin_request_cb(bt_bdaddr_t* remote_bd_addr, bt_bdname_t* bd_name,
 
   return;
 cleanup:
-  cleanup_pdu_wbuf(wbuf);
+  destroy_pdu_wbuf(wbuf);
 }
 
 static void
@@ -588,7 +588,7 @@ ssp_request_cb(bt_bdaddr_t* remote_bd_addr, bt_bdname_t* bd_name,
 
   return;
 cleanup:
-  cleanup_pdu_wbuf(wbuf);
+  destroy_pdu_wbuf(wbuf);
 }
 
 static void
@@ -617,7 +617,7 @@ bond_state_changed_cb(bt_status_t status, bt_bdaddr_t* remote_bd_addr,
 
   return;
 cleanup:
-  cleanup_pdu_wbuf(wbuf);
+  destroy_pdu_wbuf(wbuf);
 }
 
 static void
@@ -646,7 +646,7 @@ acl_state_changed_cb(bt_status_t status, bt_bdaddr_t* remote_bd_addr,
 
   return;
 cleanup:
-  cleanup_pdu_wbuf(wbuf);
+  destroy_pdu_wbuf(wbuf);
 }
 
 static void
@@ -676,7 +676,7 @@ dut_mode_recv_cb(uint16_t opcode, uint8_t* buf, uint8_t len)
 
   return;
 cleanup:
-  cleanup_pdu_wbuf(wbuf);
+  destroy_pdu_wbuf(wbuf);
 }
 
 #if ANDROID_VERSION >= 18
@@ -701,7 +701,7 @@ le_test_mode_cb(bt_status_t status, uint16_t num_packets)
 
   return;
 cleanup:
-  cleanup_pdu_wbuf(wbuf);
+  destroy_pdu_wbuf(wbuf);
 }
 #endif
 
@@ -827,7 +827,7 @@ enable(const struct pdu* cmd)
 
   return BT_STATUS_SUCCESS;
 err_bt_interface_enable:
-  cleanup_pdu_wbuf(wbuf);
+  destroy_pdu_wbuf(wbuf);
   return status;
 }
 
@@ -853,7 +853,7 @@ disable(const struct pdu* cmd)
 
   return BT_STATUS_SUCCESS;
 err_bt_interface_disable:
-  cleanup_pdu_wbuf(wbuf);
+  destroy_pdu_wbuf(wbuf);
   return status;
 }
 
@@ -879,7 +879,7 @@ get_adapter_properties(const struct pdu* cmd)
 
   return BT_STATUS_SUCCESS;
 err_bt_interface_get_adapter_properties:
-  cleanup_pdu_wbuf(wbuf);
+  destroy_pdu_wbuf(wbuf);
   return status;
 }
 
@@ -909,7 +909,7 @@ get_adapter_property(const struct pdu* cmd)
 
   return BT_STATUS_SUCCESS;
 err_bt_interface_get_adapter_property:
-  cleanup_pdu_wbuf(wbuf);
+  destroy_pdu_wbuf(wbuf);
   return status;
 }
 
@@ -943,7 +943,7 @@ set_adapter_property(const struct pdu* cmd)
 
   return BT_STATUS_SUCCESS;
 err_bt_interface_set_adapter_property:
-  cleanup_pdu_wbuf(wbuf);
+  destroy_pdu_wbuf(wbuf);
 err_create_pdu_wbuf:
   free(property.val);
   return status;
@@ -975,7 +975,7 @@ get_remote_device_properties(const struct pdu* cmd)
 
   return BT_STATUS_SUCCESS;
 err_bt_interface_get_remote_device_properties:
-  cleanup_pdu_wbuf(wbuf);
+  destroy_pdu_wbuf(wbuf);
   return status;
 }
 
@@ -1010,7 +1010,7 @@ get_remote_device_property(const struct pdu* cmd)
 
   return BT_STATUS_SUCCESS;
 err_bt_interface_get_remote_device_property:
-  cleanup_pdu_wbuf(wbuf);
+  destroy_pdu_wbuf(wbuf);
   return status;
 }
 
@@ -1049,7 +1049,7 @@ set_remote_device_property(const struct pdu* cmd)
 
   return BT_STATUS_SUCCESS;
 err_bt_interface_set_remote_device_property:
-  cleanup_pdu_wbuf(wbuf);
+  destroy_pdu_wbuf(wbuf);
 err_create_pdu_wbuf:
   free(property.val);
   return status;
@@ -1095,7 +1095,7 @@ get_remote_service_record(const struct pdu* cmd)
 err_bt_interface_get_remote_service_record:
   remove_get_remote_service_record_params(params);
 err_store_get_remote_service_record_params:
-  cleanup_pdu_wbuf(wbuf);
+  destroy_pdu_wbuf(wbuf);
   return status;
 }
 
@@ -1125,7 +1125,7 @@ get_remote_services(const struct pdu* cmd)
 
   return BT_STATUS_SUCCESS;
 err_bt_interface_get_remote_services:
-  cleanup_pdu_wbuf(wbuf);
+  destroy_pdu_wbuf(wbuf);
   return status;
 }
 
@@ -1151,7 +1151,7 @@ start_discovery(const struct pdu* cmd)
 
   return BT_STATUS_SUCCESS;
 err_bt_interface_start_discovery:
-  cleanup_pdu_wbuf(wbuf);
+  destroy_pdu_wbuf(wbuf);
   return status;
 }
 
@@ -1177,7 +1177,7 @@ cancel_discovery(const struct pdu* cmd)
 
   return BT_STATUS_SUCCESS;
 err_bt_interface_cancel_discovery:
-  cleanup_pdu_wbuf(wbuf);
+  destroy_pdu_wbuf(wbuf);
   return status;
 }
 
@@ -1221,7 +1221,7 @@ create_bond(const struct pdu* cmd)
 
   return BT_STATUS_SUCCESS;
 err_bt_interface_create_bond:
-  cleanup_pdu_wbuf(wbuf);
+  destroy_pdu_wbuf(wbuf);
   return status;
 }
 
@@ -1251,7 +1251,7 @@ remove_bond(const struct pdu* cmd)
 
   return BT_STATUS_SUCCESS;
 err_bt_interface_remove_bond:
-  cleanup_pdu_wbuf(wbuf);
+  destroy_pdu_wbuf(wbuf);
   return status;
 }
 
@@ -1281,7 +1281,7 @@ cancel_bond(const struct pdu* cmd)
 
   return BT_STATUS_SUCCESS;
 err_bt_interface_cancel_bond:
-  cleanup_pdu_wbuf(wbuf);
+  destroy_pdu_wbuf(wbuf);
   return status;
 }
 
@@ -1321,7 +1321,7 @@ pin_reply(const struct pdu* cmd)
 
   return BT_STATUS_SUCCESS;
 err_bt_interface_pin_reply:
-  cleanup_pdu_wbuf(wbuf);
+  destroy_pdu_wbuf(wbuf);
   return status;
 }
 
@@ -1358,7 +1358,7 @@ ssp_reply(const struct pdu* cmd)
 
   return BT_STATUS_SUCCESS;
 err_bt_interface_ssp_reply:
-  cleanup_pdu_wbuf(wbuf);
+  destroy_pdu_wbuf(wbuf);
   return status;
 }
 
@@ -1388,7 +1388,7 @@ dut_mode_configure(const struct pdu* cmd)
 
   return BT_STATUS_SUCCESS;
 err_bt_interface_dut_mode_configure:
-  cleanup_pdu_wbuf(wbuf);
+  destroy_pdu_wbuf(wbuf);
   return status;
 }
 
@@ -1424,7 +1424,7 @@ dut_mode_send(const struct pdu* cmd)
 
   return BT_STATUS_SUCCESS;
 err_bt_interface_dut_mode_send:
-  cleanup_pdu_wbuf(wbuf);
+  destroy_pdu_wbuf(wbuf);
   return status;
 }
 
@@ -1458,7 +1458,7 @@ le_test_mode(const struct pdu* cmd)
 
   return BT_STATUS_SUCCESS;
 err_bt_core_le_test_mode:
-  cleanup_pdu_wbuf(wbuf);
+  destroy_pdu_wbuf(wbuf);
   return status;
 }
 #endif

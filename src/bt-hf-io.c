@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2014-2015  Mozilla Foundation
+ * Copyright (C) 2014-2016  Mozilla Foundation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,11 +18,11 @@
 #include <fdio/task.h>
 #include <hardware/bluetooth.h>
 #include <hardware/bt_hf.h>
+#include <pdu/pdubuf.h>
 #include <stdlib.h>
 #include "compiler.h"
 #include "log.h"
 #include "bt-proto.h"
-#include "bt-pdubuf.h"
 #include "bt-core-io.h"
 #include "bt-hf-io.h"
 
@@ -103,7 +103,7 @@ connection_state_cb(bthf_connection_state_t state, bt_bdaddr_t* bd_addr)
 
   return;
 cleanup:
-  cleanup_pdu_wbuf(wbuf);
+  destroy_pdu_wbuf(wbuf);
 }
 
 static void
@@ -127,7 +127,7 @@ audio_state_cb(bthf_audio_state_t state, bt_bdaddr_t* bd_addr)
 
   return;
 cleanup:
-  cleanup_pdu_wbuf(wbuf);
+  destroy_pdu_wbuf(wbuf);
 }
 
 static void
@@ -158,7 +158,7 @@ vr_cmd_cb(bthf_vr_state_t state)
 
   return;
 cleanup:
-  cleanup_pdu_wbuf(wbuf);
+  destroy_pdu_wbuf(wbuf);
 }
 
 static void
@@ -186,7 +186,7 @@ answer_call_cmd_cb(void)
 
   return;
 cleanup:
-  cleanup_pdu_wbuf(wbuf);
+  destroy_pdu_wbuf(wbuf);
 }
 
 static void
@@ -214,7 +214,7 @@ hangup_call_cmd_cb(void)
 
   return;
 cleanup:
-  cleanup_pdu_wbuf(wbuf);
+  destroy_pdu_wbuf(wbuf);
 }
 
 static void
@@ -246,7 +246,7 @@ volume_cmd_cb(bthf_volume_type_t type, int volume)
 
   return;
 cleanup:
-  cleanup_pdu_wbuf(wbuf);
+  destroy_pdu_wbuf(wbuf);
 }
 
 static void
@@ -283,7 +283,7 @@ dial_call_cmd_cb(char* number)
 
   return;
 cleanup:
-  cleanup_pdu_wbuf(wbuf);
+  destroy_pdu_wbuf(wbuf);
 }
 
 static void
@@ -314,7 +314,7 @@ dtmf_cmd_cb(char tone)
 
   return;
 cleanup:
-  cleanup_pdu_wbuf(wbuf);
+  destroy_pdu_wbuf(wbuf);
 }
 
 static void
@@ -345,7 +345,7 @@ nrec_cmd_cb(bthf_nrec_t nrec)
 
   return;
 cleanup:
-  cleanup_pdu_wbuf(wbuf);
+  destroy_pdu_wbuf(wbuf);
 }
 
 #if ANDROID_VERSION >= 21
@@ -371,7 +371,7 @@ wbs_cb(bthf_wbs_config_t wbs, bt_bdaddr_t* bd_addr)
 
   return;
 cleanup:
-  cleanup_pdu_wbuf(wbuf);
+  destroy_pdu_wbuf(wbuf);
 }
 #endif
 
@@ -403,7 +403,7 @@ chld_cmd_cb(bthf_chld_type_t chld)
 
   return;
 cleanup:
-  cleanup_pdu_wbuf(wbuf);
+  destroy_pdu_wbuf(wbuf);
 }
 
 static void
@@ -431,7 +431,7 @@ cnum_cmd_cb(void)
 
   return;
 cleanup:
-  cleanup_pdu_wbuf(wbuf);
+  destroy_pdu_wbuf(wbuf);
 }
 
 static void
@@ -459,7 +459,7 @@ cind_cmd_cb(void)
 
   return;
 cleanup:
-  cleanup_pdu_wbuf(wbuf);
+  destroy_pdu_wbuf(wbuf);
 }
 
 static void
@@ -487,7 +487,7 @@ cops_cmd_cb(void)
 
   return;
 cleanup:
-  cleanup_pdu_wbuf(wbuf);
+  destroy_pdu_wbuf(wbuf);
 }
 
 static void
@@ -515,7 +515,7 @@ clcc_cmd_cb(void)
 
   return;
 cleanup:
-  cleanup_pdu_wbuf(wbuf);
+  destroy_pdu_wbuf(wbuf);
 }
 
 static void
@@ -551,7 +551,7 @@ unknown_at_cmd_cb(char* at_string)
 
   return;
 cleanup:
-  cleanup_pdu_wbuf(wbuf);
+  destroy_pdu_wbuf(wbuf);
 }
 
 static void
@@ -579,7 +579,7 @@ key_pressed_cmd_cb(void)
 
   return;
 cleanup:
-  cleanup_pdu_wbuf(wbuf);
+  destroy_pdu_wbuf(wbuf);
 }
 
 /*
@@ -612,7 +612,7 @@ opcode_connect(const struct pdu* cmd)
 
   return BT_STATUS_SUCCESS;
 err_bthf_interface_connect:
-  cleanup_pdu_wbuf(wbuf);
+  destroy_pdu_wbuf(wbuf);
   return status;
 }
 
@@ -642,7 +642,7 @@ opcode_disconnect(const struct pdu* cmd)
 
   return BT_STATUS_SUCCESS;
 err_bthf_interface_disconnect:
-  cleanup_pdu_wbuf(wbuf);
+  destroy_pdu_wbuf(wbuf);
   return status;
 }
 
@@ -672,7 +672,7 @@ opcode_connect_audio(const struct pdu* cmd)
 
   return BT_STATUS_SUCCESS;
 err_bthf_interface_connect_audio:
-  cleanup_pdu_wbuf(wbuf);
+  destroy_pdu_wbuf(wbuf);
   return status;
 }
 
@@ -702,7 +702,7 @@ opcode_disconnect_audio(const struct pdu* cmd)
 
   return BT_STATUS_SUCCESS;
 err_bthf_interface_disconnect_audio:
-  cleanup_pdu_wbuf(wbuf);
+  destroy_pdu_wbuf(wbuf);
   return status;
 }
 
@@ -740,7 +740,7 @@ opcode_start_voice_recognition(const struct pdu* cmd)
 
   return BT_STATUS_SUCCESS;
 err_bthf_interface_start_voice_recognition:
-  cleanup_pdu_wbuf(wbuf);
+  destroy_pdu_wbuf(wbuf);
   return status;
 }
 
@@ -778,7 +778,7 @@ opcode_stop_voice_recognition(const struct pdu* cmd)
 
   return BT_STATUS_SUCCESS;
 err_bthf_interface_stop_voice_recognition:
-  cleanup_pdu_wbuf(wbuf);
+  destroy_pdu_wbuf(wbuf);
   return status;
 }
 
@@ -822,7 +822,7 @@ opcode_volume_control(const struct pdu* cmd)
 
   return BT_STATUS_SUCCESS;
 err_bthf_interface_volume_control:
-  cleanup_pdu_wbuf(wbuf);
+  destroy_pdu_wbuf(wbuf);
   return status;
 }
 
@@ -853,7 +853,7 @@ opcode_device_status_notification(const struct pdu* cmd)
 
   return BT_STATUS_SUCCESS;
 err_bthf_interface_device_status_notification:
-  cleanup_pdu_wbuf(wbuf);
+  destroy_pdu_wbuf(wbuf);
   return status;
 }
 
@@ -907,7 +907,7 @@ opcode_cops_response(const struct pdu* cmd)
 
   return BT_STATUS_SUCCESS;
 err_bthf_interface_cops_response:
-  cleanup_pdu_wbuf(wbuf);
+  destroy_pdu_wbuf(wbuf);
 err_create_pdu_wbuf:
 #if ANDROID_VERSION >= 21
 err_read_bt_bdaddr_t:
@@ -960,7 +960,7 @@ opcode_cind_response(const struct pdu* cmd)
 
   return BT_STATUS_SUCCESS;
 err_bthf_interface_cind_response:
-  cleanup_pdu_wbuf(wbuf);
+  destroy_pdu_wbuf(wbuf);
   return status;
 }
 
@@ -1014,7 +1014,7 @@ opcode_formatted_at_response(const struct pdu* cmd)
 
   return BT_STATUS_SUCCESS;
 err_bthf_interface_formatted_at_response:
-  cleanup_pdu_wbuf(wbuf);
+  destroy_pdu_wbuf(wbuf);
 err_create_pdu_wbuf:
 #if ANDROID_VERSION >= 21
 err_read_bt_bdaddr_t:
@@ -1064,7 +1064,7 @@ opcode_at_response(const struct pdu* cmd)
 
   return BT_STATUS_SUCCESS;
 err_bthf_interface_at_response:
-  cleanup_pdu_wbuf(wbuf);
+  destroy_pdu_wbuf(wbuf);
   return status;
 }
 
@@ -1122,7 +1122,7 @@ opcode_clcc_response(const struct pdu* cmd)
 
   return BT_STATUS_SUCCESS;
 err_bthf_interface_clcc_response:
-  cleanup_pdu_wbuf(wbuf);
+  destroy_pdu_wbuf(wbuf);
 err_create_pdu_wbuf:
 #if ANDROID_VERSION >= 21
 err_read_bt_bdaddr_t:
@@ -1169,7 +1169,7 @@ opcode_phone_state_change(const struct pdu* cmd)
 
   return BT_STATUS_SUCCESS;
 err_bthf_interface_phone_state_change:
-  cleanup_pdu_wbuf(wbuf);
+  destroy_pdu_wbuf(wbuf);
 err_create_pdu_wbuf:
 err_read_pdu_at:
   free(number);
@@ -1215,7 +1215,7 @@ opcode_configure_wbs(const struct pdu* cmd)
 
   return BT_STATUS_SUCCESS;
 err_bthf_interface_configure_wbs:
-  cleanup_pdu_wbuf(wbuf);
+  destroy_pdu_wbuf(wbuf);
 err_create_pdu_wbuf:
 err_read_pdu_at:
 err_read_bt_bdaddr_t:

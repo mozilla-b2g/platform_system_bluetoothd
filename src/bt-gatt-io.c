@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2015  Mozilla Foundation
+ * Copyright (C) 2015-2016  Mozilla Foundation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -22,11 +22,11 @@
 #include <fdio/task.h>
 #include <hardware/bluetooth.h>
 #include <hardware/bt_gatt.h>
+#include <pdu/pdubuf.h>
 #include <stdlib.h>
 #include "compiler.h"
 #include "log.h"
 #include "bt-proto.h"
-#include "bt-pdubuf.h"
 #include "bt-core-io.h"
 #include "bt-gatt-io.h"
 #include "version.h"
@@ -304,7 +304,7 @@ client_register_client_cb(int status, int client_if, bt_uuid_t* app_uuid)
 
   return;
 cleanup:
-  cleanup_pdu_wbuf(wbuf);
+  destroy_pdu_wbuf(wbuf);
 }
 
 static void
@@ -365,7 +365,7 @@ client_scan_result_cb(bt_bdaddr_t* bd_addr, int rssi, uint8_t* adv_data)
 
   return;
 cleanup:
-  cleanup_pdu_wbuf(wbuf);
+  destroy_pdu_wbuf(wbuf);
 }
 
 static void
@@ -393,7 +393,7 @@ client_open_cb(int conn_id, int status, int client_if, bt_bdaddr_t* bd_addr)
 
   return;
 cleanup:
-  cleanup_pdu_wbuf(wbuf);
+  destroy_pdu_wbuf(wbuf);
 }
 
 static void
@@ -421,7 +421,7 @@ client_close_cb(int conn_id, int status, int client_if, bt_bdaddr_t* bd_addr)
 
   return;
 cleanup:
-  cleanup_pdu_wbuf(wbuf);
+  destroy_pdu_wbuf(wbuf);
 }
 
 static void
@@ -445,7 +445,7 @@ client_search_complete_cb(int conn_id, int status)
 
   return;
 cleanup:
-  cleanup_pdu_wbuf(wbuf);
+  destroy_pdu_wbuf(wbuf);
 }
 
 static void
@@ -469,7 +469,7 @@ client_search_result_cb(int conn_id, btgatt_srvc_id_t* srvc_id)
 
   return;
 cleanup:
-  cleanup_pdu_wbuf(wbuf);
+  destroy_pdu_wbuf(wbuf);
 }
 
 static void
@@ -501,7 +501,7 @@ client_get_characteristic_cb(int conn_id, int status,
 
   return;
 cleanup:
-  cleanup_pdu_wbuf(wbuf);
+  destroy_pdu_wbuf(wbuf);
 }
 
 static void
@@ -534,7 +534,7 @@ client_get_descriptor_cb(int conn_id, int status,
 
   return;
 cleanup:
-  cleanup_pdu_wbuf(wbuf);
+  destroy_pdu_wbuf(wbuf);
 }
 
 static void
@@ -565,7 +565,7 @@ client_get_included_service_cb(int conn_id, int status,
 
   return;
 cleanup:
-  cleanup_pdu_wbuf(wbuf);
+  destroy_pdu_wbuf(wbuf);
 }
 
 static void
@@ -598,7 +598,7 @@ client_register_for_notification_cb(int conn_id, int registered, int status,
 
   return;
 cleanup:
-  cleanup_pdu_wbuf(wbuf);
+  destroy_pdu_wbuf(wbuf);
 }
 
 static void
@@ -622,7 +622,7 @@ client_notify_cb(int conn_id, btgatt_notify_params_t* p_data)
 
   return;
 cleanup:
-  cleanup_pdu_wbuf(wbuf);
+  destroy_pdu_wbuf(wbuf);
 }
 
 static void
@@ -650,7 +650,7 @@ client_read_characteristic_cb(int conn_id, int status,
 
   return;
 cleanup:
-  cleanup_pdu_wbuf(wbuf);
+  destroy_pdu_wbuf(wbuf);
 }
 
 static void
@@ -678,7 +678,7 @@ client_write_characteristic_cb(int conn_id, int status,
 
   return;
 cleanup:
-  cleanup_pdu_wbuf(wbuf);
+  destroy_pdu_wbuf(wbuf);
 }
 
 static void
@@ -706,7 +706,7 @@ client_read_descriptor_cb(int conn_id, int status,
 
   return;
 cleanup:
-  cleanup_pdu_wbuf(wbuf);
+  destroy_pdu_wbuf(wbuf);
 }
 
 static void
@@ -734,7 +734,7 @@ client_write_descriptor_cb(int conn_id, int status,
 
   return;
 cleanup:
-  cleanup_pdu_wbuf(wbuf);
+  destroy_pdu_wbuf(wbuf);
 }
 
 static void
@@ -758,7 +758,7 @@ client_execute_write_cb(int conn_id, int status)
 
   return;
 cleanup:
-  cleanup_pdu_wbuf(wbuf);
+  destroy_pdu_wbuf(wbuf);
 }
 
 static void
@@ -787,7 +787,7 @@ client_read_remote_rssi_cb(int client_if, bt_bdaddr_t* bd_addr, int rssi,
 
   return;
 cleanup:
-  cleanup_pdu_wbuf(wbuf);
+  destroy_pdu_wbuf(wbuf);
 }
 
 static void
@@ -811,7 +811,7 @@ client_listen_cb(int status, int server_if)
 
   return;
 cleanup:
-  cleanup_pdu_wbuf(wbuf);
+  destroy_pdu_wbuf(wbuf);
 }
 
 #if ANDROID_VERSION >= 21
@@ -838,7 +838,7 @@ client_configure_mtu_cb(int conn_id, int status, int mtu)
 
   return;
 cleanup:
-  cleanup_pdu_wbuf(wbuf);
+  destroy_pdu_wbuf(wbuf);
 }
 
 static void
@@ -870,7 +870,7 @@ client_scan_filter_cfg_cb(int action, int client_if, int status,
 
   return;
 cleanup:
-  cleanup_pdu_wbuf(wbuf);
+  destroy_pdu_wbuf(wbuf);
 }
 
 static void
@@ -900,7 +900,7 @@ client_scan_filter_param_cb(int action, int client_if, int status,
 
   return;
 cleanup:
-  cleanup_pdu_wbuf(wbuf);
+  destroy_pdu_wbuf(wbuf);
 }
 
 static void
@@ -927,7 +927,7 @@ client_scan_filter_status_cb(int enable, int client_if, int status)
 
   return;
 cleanup:
-  cleanup_pdu_wbuf(wbuf);
+  destroy_pdu_wbuf(wbuf);
 }
 
 static void
@@ -952,7 +952,7 @@ client_multi_adv_enable_cb(int client_if, int status)
 
   return;
 cleanup:
-  cleanup_pdu_wbuf(wbuf);
+  destroy_pdu_wbuf(wbuf);
 }
 
 static void
@@ -977,7 +977,7 @@ client_multi_adv_update_cb(int client_if, int status)
 
   return;
 cleanup:
-  cleanup_pdu_wbuf(wbuf);
+  destroy_pdu_wbuf(wbuf);
 }
 
 static void
@@ -1002,7 +1002,7 @@ client_multi_adv_data_cb(int client_if, int status)
 
   return;
 cleanup:
-  cleanup_pdu_wbuf(wbuf);
+  destroy_pdu_wbuf(wbuf);
 }
 
 static void
@@ -1027,7 +1027,7 @@ client_multi_adv_disable_cb(int client_if, int status)
 
   return;
 cleanup:
-  cleanup_pdu_wbuf(wbuf);
+  destroy_pdu_wbuf(wbuf);
 }
 
 static void
@@ -1051,7 +1051,7 @@ client_congestion_cb(int conn_id, bool congested)
 
   return;
 cleanup:
-  cleanup_pdu_wbuf(wbuf);
+  destroy_pdu_wbuf(wbuf);
 }
 
 static void
@@ -1076,7 +1076,7 @@ client_batchscan_cfg_storage_cb(int client_if, int status)
 
   return;
 cleanup:
-  cleanup_pdu_wbuf(wbuf);
+  destroy_pdu_wbuf(wbuf);
 }
 
 static void
@@ -1103,7 +1103,7 @@ client_batchscan_enb_disable_cb(int action, int client_if, int status)
 
   return;
 cleanup:
-  cleanup_pdu_wbuf(wbuf);
+  destroy_pdu_wbuf(wbuf);
 }
 
 static void
@@ -1138,7 +1138,7 @@ client_batchscan_reports_cb(int client_if, int status, int report_format,
 
   return;
 cleanup:
-  cleanup_pdu_wbuf(wbuf);
+  destroy_pdu_wbuf(wbuf);
 }
 
 static void
@@ -1160,7 +1160,7 @@ client_batchscan_threshold_cb(int client_if)
 
   return;
 cleanup:
-  cleanup_pdu_wbuf(wbuf);
+  destroy_pdu_wbuf(wbuf);
 }
 
 static void
@@ -1192,7 +1192,7 @@ client_track_adv_event_cb(int client_if, int filt_index, int addr_type,
 
   return;
 cleanup:
-  cleanup_pdu_wbuf(wbuf);
+  destroy_pdu_wbuf(wbuf);
 }
 #endif
 
@@ -1220,7 +1220,7 @@ server_register_server_cb(int status, int server_if,
 
   return;
 cleanup:
-  cleanup_pdu_wbuf(wbuf);
+  destroy_pdu_wbuf(wbuf);
 }
 
 static void
@@ -1249,7 +1249,7 @@ server_connection_cb(int conn_id, int server_if, int connected,
 
   return;
 cleanup:
-  cleanup_pdu_wbuf(wbuf);
+  destroy_pdu_wbuf(wbuf);
 }
 
 static void
@@ -1278,7 +1278,7 @@ server_service_added_cb(int status, int server_if, btgatt_srvc_id_t *srvc_id,
 
   return;
 cleanup:
-  cleanup_pdu_wbuf(wbuf);
+  destroy_pdu_wbuf(wbuf);
 }
 
 static void
@@ -1308,7 +1308,7 @@ server_included_service_added_cb(int status, int server_if, int srvc_handle,
 
   return;
 cleanup:
-  cleanup_pdu_wbuf(wbuf);
+  destroy_pdu_wbuf(wbuf);
 }
 
 static void
@@ -1340,7 +1340,7 @@ server_characteristic_added_cb(int status, int server_if, bt_uuid_t* uuid,
 
   return;
 cleanup:
-  cleanup_pdu_wbuf(wbuf);
+  destroy_pdu_wbuf(wbuf);
 }
 
 static void
@@ -1372,7 +1372,7 @@ server_descriptor_added_cb(int status, int server_if, bt_uuid_t* uuid,
 
   return;
 cleanup:
-  cleanup_pdu_wbuf(wbuf);
+  destroy_pdu_wbuf(wbuf);
 }
 
 static void
@@ -1399,7 +1399,7 @@ server_service_started_cb(int status, int server_if, int srvc_handle)
 
   return;
 cleanup:
-  cleanup_pdu_wbuf(wbuf);
+  destroy_pdu_wbuf(wbuf);
 }
 
 static void
@@ -1426,7 +1426,7 @@ server_service_stopped_cb(int status, int server_if, int srvc_handle)
 
   return;
 cleanup:
-  cleanup_pdu_wbuf(wbuf);
+  destroy_pdu_wbuf(wbuf);
 }
 
 static void
@@ -1453,7 +1453,7 @@ server_service_deleted_cb(int status, int server_if, int srvc_handle)
 
   return;
 cleanup:
-  cleanup_pdu_wbuf(wbuf);
+  destroy_pdu_wbuf(wbuf);
 }
 
 static void
@@ -1487,7 +1487,7 @@ server_request_read_cb(int conn_id, int trans_id, bt_bdaddr_t* bd_addr,
 
   return;
 cleanup:
-  cleanup_pdu_wbuf(wbuf);
+  destroy_pdu_wbuf(wbuf);
 }
 
 static void
@@ -1529,7 +1529,7 @@ server_request_write_cb(int conn_id, int trans_id, bt_bdaddr_t* bd_addr,
 
   return;
 cleanup:
-  cleanup_pdu_wbuf(wbuf);
+  destroy_pdu_wbuf(wbuf);
 }
 
 static void
@@ -1559,7 +1559,7 @@ server_request_exec_write_cb(int conn_id, int trans_id, bt_bdaddr_t* bd_addr,
 
   return;
 cleanup:
-  cleanup_pdu_wbuf(wbuf);
+  destroy_pdu_wbuf(wbuf);
 }
 
 static void
@@ -1584,7 +1584,7 @@ server_response_confirmation_cb(int status, int handle)
 
   return;
 cleanup:
-  cleanup_pdu_wbuf(wbuf);
+  destroy_pdu_wbuf(wbuf);
 }
 
 #if ANDROID_VERSION >= 21
@@ -1610,7 +1610,7 @@ server_indication_sent_cb(int conn_id, int status)
 
   return;
 cleanup:
-  cleanup_pdu_wbuf(wbuf);
+  destroy_pdu_wbuf(wbuf);
 }
 
 static void
@@ -1635,7 +1635,7 @@ server_congestion_cb(int conn_id, bool congested)
 
   return;
 cleanup:
-  cleanup_pdu_wbuf(wbuf);
+  destroy_pdu_wbuf(wbuf);
 }
 #endif
 
@@ -1662,7 +1662,7 @@ server_mtu_changed_cb(int conn_id, int mtu)
 
   return;
 cleanup:
-  cleanup_pdu_wbuf(wbuf);
+  destroy_pdu_wbuf(wbuf);
 }
 #endif
 
@@ -1697,7 +1697,7 @@ opcode_client_register(const struct pdu* cmd)
 
   return BT_STATUS_SUCCESS;
 err_btgatt_interface_client_register_client:
-  cleanup_pdu_wbuf(wbuf);
+  destroy_pdu_wbuf(wbuf);
   return status;
 }
 
@@ -1728,7 +1728,7 @@ opcode_client_unregister(const struct pdu* cmd)
 
   return BT_STATUS_SUCCESS;
 err_btgatt_interface_client_unregister_client:
-  cleanup_pdu_wbuf(wbuf);
+  destroy_pdu_wbuf(wbuf);
   return status;
 }
 
@@ -1764,7 +1764,7 @@ opcode_client_scan(const struct pdu* cmd)
 
   return BT_STATUS_SUCCESS;
 err_btgatt_interface_client_scan:
-  cleanup_pdu_wbuf(wbuf);
+  destroy_pdu_wbuf(wbuf);
   return status;
 }
 
@@ -1808,7 +1808,7 @@ opcode_client_connect_device(const struct pdu* cmd)
 
   return BT_STATUS_SUCCESS;
 err_btgatt_interface_client_connect_device:
-  cleanup_pdu_wbuf(wbuf);
+  destroy_pdu_wbuf(wbuf);
   return status;
 #else
   long off;
@@ -1846,7 +1846,7 @@ err_btgatt_interface_client_connect_device:
 
   return BT_STATUS_SUCCESS;
 err_btgatt_interface_client_connect:
-  cleanup_pdu_wbuf(wbuf);
+  destroy_pdu_wbuf(wbuf);
   return status;
 #endif
 }
@@ -1888,7 +1888,7 @@ opcode_client_disconnect_device(const struct pdu* cmd)
 
   return BT_STATUS_SUCCESS;
 err_btgatt_interface_client_disconnect:
-  cleanup_pdu_wbuf(wbuf);
+  destroy_pdu_wbuf(wbuf);
   return status;
 }
 
@@ -1920,7 +1920,7 @@ opcode_client_listen(const struct pdu* cmd)
 
   return BT_STATUS_SUCCESS;
 err_btgatt_interface_client_listen:
-  cleanup_pdu_wbuf(wbuf);
+  destroy_pdu_wbuf(wbuf);
   return status;
 }
 
@@ -1957,7 +1957,7 @@ opcode_client_refresh(const struct pdu* cmd)
 
   return BT_STATUS_SUCCESS;
 err_btgatt_interface_client_refresh:
-  cleanup_pdu_wbuf(wbuf);
+  destroy_pdu_wbuf(wbuf);
   return status;
 }
 
@@ -2001,7 +2001,7 @@ opcode_client_search_service(const struct pdu* cmd)
 
   return BT_STATUS_SUCCESS;
 err_btgatt_interface_client_search_service:
-  cleanup_pdu_wbuf(wbuf);
+  destroy_pdu_wbuf(wbuf);
   return status;
 }
 
@@ -2056,7 +2056,7 @@ opcode_client_get_included_service(const struct pdu* cmd)
 
   return BT_STATUS_SUCCESS;
 err_btgatt_interface_client_get_included_service:
-  cleanup_pdu_wbuf(wbuf);
+  destroy_pdu_wbuf(wbuf);
   return status;
 }
 
@@ -2111,7 +2111,7 @@ opcode_client_get_characteristic(const struct pdu* cmd)
 
   return BT_STATUS_SUCCESS;
 err_btgatt_interface_client_get_characteristic:
-  cleanup_pdu_wbuf(wbuf);
+  destroy_pdu_wbuf(wbuf);
   return status;
 }
 
@@ -2170,7 +2170,7 @@ opcode_client_get_descriptor(const struct pdu* cmd)
 
   return BT_STATUS_SUCCESS;
 err_btgatt_interface_client_get_descriptor:
-  cleanup_pdu_wbuf(wbuf);
+  destroy_pdu_wbuf(wbuf);
   return status;
 }
 
@@ -2218,7 +2218,7 @@ opcode_client_read_characteristic(const struct pdu* cmd)
 
   return BT_STATUS_SUCCESS;
 err_btgatt_interface_client_read_characteristic:
-  cleanup_pdu_wbuf(wbuf);
+  destroy_pdu_wbuf(wbuf);
   return status;
 }
 
@@ -2280,7 +2280,7 @@ opcode_client_write_characteristic(const struct pdu* cmd)
 
   return BT_STATUS_SUCCESS;
 err_btgatt_interface_client_write_characteristic:
-  cleanup_pdu_wbuf(wbuf);
+  destroy_pdu_wbuf(wbuf);
 err_create_pdu_wbuf:
   free(value);
   return status;
@@ -2336,7 +2336,7 @@ opcode_client_read_descriptor(const struct pdu* cmd)
 
   return BT_STATUS_SUCCESS;
 err_btgatt_interface_client_read_descriptor:
-  cleanup_pdu_wbuf(wbuf);
+  destroy_pdu_wbuf(wbuf);
   return status;
 }
 
@@ -2402,7 +2402,7 @@ opcode_client_write_descriptor(const struct pdu* cmd)
 
   return BT_STATUS_SUCCESS;
 err_btgatt_interface_client_write_descriptor:
-  cleanup_pdu_wbuf(wbuf);
+  destroy_pdu_wbuf(wbuf);
 err_create_pdu_wbuf:
   free(value);
   return status;
@@ -2435,7 +2435,7 @@ opcode_client_execute_write(const struct pdu* cmd)
 
   return BT_STATUS_SUCCESS;
 err_btgatt_interface_client_execute_write:
-  cleanup_pdu_wbuf(wbuf);
+  destroy_pdu_wbuf(wbuf);
   return status;
 }
 
@@ -2486,7 +2486,7 @@ opcode_client_register_for_notification(const struct pdu* cmd)
 
   return BT_STATUS_SUCCESS;
 err_btgatt_interface_client_register_for_notification:
-  cleanup_pdu_wbuf(wbuf);
+  destroy_pdu_wbuf(wbuf);
   return status;
 }
 
@@ -2537,7 +2537,7 @@ opcode_client_deregister_for_notification(const struct pdu* cmd)
 
   return BT_STATUS_SUCCESS;
 err_btgatt_interface_client_deregister_for_notification:
-  cleanup_pdu_wbuf(wbuf);
+  destroy_pdu_wbuf(wbuf);
   return status;
 }
 
@@ -2574,7 +2574,7 @@ opcode_client_read_remote_rssi(const struct pdu* cmd)
 
   return BT_STATUS_SUCCESS;
 err_btgatt_interface_client_read_remote_rssi:
-  cleanup_pdu_wbuf(wbuf);
+  destroy_pdu_wbuf(wbuf);
   return status;
 }
 
@@ -2614,7 +2614,7 @@ opcode_client_get_device_type(const struct pdu* cmd)
   return BT_STATUS_SUCCESS;
 err_append_to_pdu_at:
 err_btgatt_interface_client_get_device_type:
-  cleanup_pdu_wbuf(wbuf);
+  destroy_pdu_wbuf(wbuf);
   return status;
 }
 
@@ -2693,7 +2693,7 @@ opcode_client_set_advertising_data(const struct pdu* cmd)
 
   return BT_STATUS_SUCCESS;
 err_btgatt_interface_client_set_adv_data:
-  cleanup_pdu_wbuf(wbuf);
+  destroy_pdu_wbuf(wbuf);
 err_create_pdu_wbuf:
   free(uuid);
 err_read_pdu_at_uuid:
@@ -2740,7 +2740,7 @@ opcode_client_test_command(const struct pdu* cmd)
 
   return BT_STATUS_SUCCESS;
 err_btgatt_interface_client_test_command:
-  cleanup_pdu_wbuf(wbuf);
+  destroy_pdu_wbuf(wbuf);
 err_create_pdu_wbuf:
   cleanup_btgatt_test_params_t(&params);
   return status;
@@ -2801,7 +2801,7 @@ opcode_client_scan_filter_param_setup(const struct pdu* cmd)
 
   return BT_STATUS_SUCCESS;
 err_btgatt_interface_client_scan_filter_param_setup:
-  cleanup_pdu_wbuf(wbuf);
+  destroy_pdu_wbuf(wbuf);
   return status;
 }
 
@@ -2895,7 +2895,7 @@ opcode_client_scan_filter_add_remove(const struct pdu* cmd)
 
   return BT_STATUS_SUCCESS;
 err_btgatt_interface_client_scan_filter_add_remove:
-  cleanup_pdu_wbuf(wbuf);
+  destroy_pdu_wbuf(wbuf);
 err_create_pdu_wbuf:
   free(mask);
 err_read_pdu_at_mask:
@@ -2932,7 +2932,7 @@ opcode_client_scan_filter_clear(const struct pdu* cmd)
 
   return BT_STATUS_SUCCESS;
 err_btgatt_interface_client_scan_filter_clear:
-  cleanup_pdu_wbuf(wbuf);
+  destroy_pdu_wbuf(wbuf);
   return status;
 }
 
@@ -2966,7 +2966,7 @@ opcode_client_scan_filter_enable(const struct pdu* cmd)
 
   return BT_STATUS_SUCCESS;
 err_btgatt_interface_client_scan_filter_enable:
-  cleanup_pdu_wbuf(wbuf);
+  destroy_pdu_wbuf(wbuf);
   return status;
 }
 
@@ -2998,7 +2998,7 @@ opcode_client_configure_mtu(const struct pdu* cmd)
 
   return BT_STATUS_SUCCESS;
 err_btgatt_interface_client_configure_mtu:
-  cleanup_pdu_wbuf(wbuf);
+  destroy_pdu_wbuf(wbuf);
   return status;
 }
 
@@ -3044,7 +3044,7 @@ opcode_client_conn_parameter_update(const struct pdu* cmd)
 
   return BT_STATUS_SUCCESS;
 err_btgatt_interface_client_conn_parameter_update:
-  cleanup_pdu_wbuf(wbuf);
+  destroy_pdu_wbuf(wbuf);
   return status;
 }
 
@@ -3076,7 +3076,7 @@ opcode_client_set_scan_parameters(const struct pdu* cmd)
 
   return BT_STATUS_SUCCESS;
 err_btgatt_interface_client_set_scan_parameters:
-  cleanup_pdu_wbuf(wbuf);
+  destroy_pdu_wbuf(wbuf);
   return status;
 }
 
@@ -3120,7 +3120,7 @@ opcode_client_multi_adv_enable(const struct pdu* cmd)
 
   return BT_STATUS_SUCCESS;
 err_btgatt_interface_client_multi_adv_enable:
-  cleanup_pdu_wbuf(wbuf);
+  destroy_pdu_wbuf(wbuf);
   return status;
 }
 
@@ -3164,7 +3164,7 @@ opcode_client_multi_adv_update(const struct pdu* cmd)
 
   return BT_STATUS_SUCCESS;
 err_btgatt_interface_client_multi_adv_update:
-  cleanup_pdu_wbuf(wbuf);
+  destroy_pdu_wbuf(wbuf);
   return status;
 }
 
@@ -3247,7 +3247,7 @@ opcode_client_multi_adv_set_inst_data(const struct pdu* cmd)
 
   return BT_STATUS_SUCCESS;
 err_btgatt_interface_client_multi_adv_update:
-  cleanup_pdu_wbuf(wbuf);
+  destroy_pdu_wbuf(wbuf);
 err_create_pdu_wbuf:
   free(uuid);
 err_read_pdu_at_uuid:
@@ -3287,7 +3287,7 @@ opcode_client_multi_adv_disable(const struct pdu* cmd)
 
   return BT_STATUS_SUCCESS;
 err_btgatt_interface_client_multi_adv_disable:
-  cleanup_pdu_wbuf(wbuf);
+  destroy_pdu_wbuf(wbuf);
   return status;
 }
 
@@ -3327,7 +3327,7 @@ opcode_client_batchscan_cfg_storage(const struct pdu* cmd)
 
   return BT_STATUS_SUCCESS;
 err_btgatt_interface_client_batchscan_cfg_storage:
-  cleanup_pdu_wbuf(wbuf);
+  destroy_pdu_wbuf(wbuf);
   return status;
 }
 
@@ -3371,7 +3371,7 @@ opcode_client_batchscan_enb_batch_scan(const struct pdu* cmd)
 
   return BT_STATUS_SUCCESS;
 err_btgatt_interface_client_batchscan_enb_batch_scan:
-  cleanup_pdu_wbuf(wbuf);
+  destroy_pdu_wbuf(wbuf);
   return status;
 }
 
@@ -3403,7 +3403,7 @@ opcode_client_batchscan_dis_batch_scan(const struct pdu* cmd)
 
   return BT_STATUS_SUCCESS;
 err_btgatt_interface_client_batchscan_dis_batch_scan:
-  cleanup_pdu_wbuf(wbuf);
+  destroy_pdu_wbuf(wbuf);
   return status;
 }
 
@@ -3437,7 +3437,7 @@ opcode_client_batchscan_read_reports(const struct pdu* cmd)
 
   return BT_STATUS_SUCCESS;
 err_btgatt_interface_client_batchscan_read_reports:
-  cleanup_pdu_wbuf(wbuf);
+  destroy_pdu_wbuf(wbuf);
   return status;
 }
 #endif
@@ -3469,7 +3469,7 @@ opcode_server_register(const struct pdu* cmd)
 
   return BT_STATUS_SUCCESS;
 err_btgatt_interface_server_register_server:
-  cleanup_pdu_wbuf(wbuf);
+  destroy_pdu_wbuf(wbuf);
   return status;
 }
 
@@ -3500,7 +3500,7 @@ opcode_server_unregister(const struct pdu* cmd)
 
   return BT_STATUS_SUCCESS;
 err_btgatt_interface_server_unregister_server:
-  cleanup_pdu_wbuf(wbuf);
+  destroy_pdu_wbuf(wbuf);
   return status;
 }
 
@@ -3544,7 +3544,7 @@ opcode_server_connect(const struct pdu* cmd)
 
   return BT_STATUS_SUCCESS;
 err_btgatt_interface_server_connect:
-  cleanup_pdu_wbuf(wbuf);
+  destroy_pdu_wbuf(wbuf);
   return status;
 #else
   long off;
@@ -3582,7 +3582,7 @@ err_btgatt_interface_server_connect:
 
   return BT_STATUS_SUCCESS;
 err_btgatt_interface_server_connect:
-  cleanup_pdu_wbuf(wbuf);
+  destroy_pdu_wbuf(wbuf);
   return status;
 #endif
 }
@@ -3624,7 +3624,7 @@ opcode_server_disconnect(const struct pdu* cmd)
 
   return BT_STATUS_SUCCESS;
 err_btgatt_interface_server_disconnect:
-  cleanup_pdu_wbuf(wbuf);
+  destroy_pdu_wbuf(wbuf);
   return status;
 }
 
@@ -3666,7 +3666,7 @@ opcode_server_add_service(const struct pdu* cmd)
 
   return BT_STATUS_SUCCESS;
 err_btgatt_interface_server_add_service:
-  cleanup_pdu_wbuf(wbuf);
+  destroy_pdu_wbuf(wbuf);
   return status;
 }
 
@@ -3703,7 +3703,7 @@ opcode_server_add_included_service(const struct pdu* cmd)
 
   return BT_STATUS_SUCCESS;
 err_btgatt_interface_server_add_included_service:
-  cleanup_pdu_wbuf(wbuf);
+  destroy_pdu_wbuf(wbuf);
   return status;
 }
 
@@ -3748,7 +3748,7 @@ opcode_server_add_characteristic(const struct pdu* cmd)
 
   return BT_STATUS_SUCCESS;
 err_btgatt_interface_server_add_characteristic:
-  cleanup_pdu_wbuf(wbuf);
+  destroy_pdu_wbuf(wbuf);
   return status;
 }
 
@@ -3791,7 +3791,7 @@ opcode_server_add_descriptor(const struct pdu* cmd)
 
   return BT_STATUS_SUCCESS;
 err_btgatt_interface_server_add_descriptor:
-  cleanup_pdu_wbuf(wbuf);
+  destroy_pdu_wbuf(wbuf);
   return status;
 }
 
@@ -3827,7 +3827,7 @@ opcode_server_start_service(const struct pdu* cmd)
 
   return BT_STATUS_SUCCESS;
 err_btgatt_interface_server_start_service:
-  cleanup_pdu_wbuf(wbuf);
+  destroy_pdu_wbuf(wbuf);
   return status;
 }
 
@@ -3858,7 +3858,7 @@ opcode_server_stop_service(const struct pdu* cmd)
 
   return BT_STATUS_SUCCESS;
 err_btgatt_interface_server_stop_service:
-  cleanup_pdu_wbuf(wbuf);
+  destroy_pdu_wbuf(wbuf);
   return status;
 }
 
@@ -3889,7 +3889,7 @@ opcode_server_delete_service(const struct pdu* cmd)
 
   return BT_STATUS_SUCCESS;
 err_btgatt_interface_server_delete_service:
-  cleanup_pdu_wbuf(wbuf);
+  destroy_pdu_wbuf(wbuf);
   return status;
 }
 
@@ -3939,7 +3939,7 @@ opcode_server_send_indication(const struct pdu* cmd)
 
   return BT_STATUS_SUCCESS;
 err_btgatt_interface_server_send_indication:
-  cleanup_pdu_wbuf(wbuf);
+  destroy_pdu_wbuf(wbuf);
 err_create_pdu_wbuf:
   free(value);
   return status;
@@ -3996,7 +3996,7 @@ opcode_server_send_response(const struct pdu* cmd)
 
   return BT_STATUS_SUCCESS;
 err_btgatt_interface_server_send_response:
-  cleanup_pdu_wbuf(wbuf);
+  destroy_pdu_wbuf(wbuf);
 err_create_pdu_wbuf:
   return status;
 }

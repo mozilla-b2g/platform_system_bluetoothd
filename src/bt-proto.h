@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2014-2015  Mozilla Foundation
+ * Copyright (C) 2014-2016  Mozilla Foundation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -19,6 +19,8 @@
 #include <stdint.h>
 #include <hardware/bluetooth.h>
 
+struct pdu;
+
 enum {
   SERVICE_CORE = 0x00,
   SERVICE_BT_CORE = 0x01,
@@ -30,19 +32,6 @@ enum {
   SERVICE_BT_GATT = 0x09
 };
 
-struct pdu {
-  uint8_t service;
-  uint8_t opcode;
-  uint16_t len;
-  unsigned char data[];
-} __attribute__((packed));
-
-void
-init_pdu(struct pdu* pdu, uint8_t service, uint8_t opcode);
-
-size_t
-pdu_size(const struct pdu* pdu);
-
 bt_status_t
 handle_pdu_by_service(const struct pdu* cmd,
                       bt_status_t (* const handler[256])(const struct pdu*));
@@ -50,10 +39,6 @@ handle_pdu_by_service(const struct pdu* cmd,
 bt_status_t
 handle_pdu_by_opcode(const struct pdu* cmd,
                      bt_status_t (* const handler[256])(const struct pdu*));
-
-long
-read_pdu_at(const struct pdu* pdu, unsigned long offset, const char* fmt,
-            ...);
 
 long
 read_bt_property_t(const struct pdu* pdu, unsigned long offset,
@@ -71,13 +56,7 @@ read_bt_pin_code_t(const struct pdu* pdu, unsigned long off,
                    bt_pin_code_t* pin_code);
 
 long
-write_pdu_at(struct pdu* pdu, unsigned long offset, const char* fmt, ...);
-
-long
 append_bt_property_t(struct pdu* pdu, const bt_property_t* property);
-
-long
-append_to_pdu(struct pdu* pdu, const char* fmt, ...);
 
 long
 append_bt_property_t(struct pdu* pdu, const bt_property_t* property);

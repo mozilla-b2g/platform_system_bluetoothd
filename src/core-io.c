@@ -1,5 +1,6 @@
 /*
  * Copyright (C) 2014  Mozilla Foundation
+ * Copyright (C) 2016  Mozilla Foundation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,9 +16,9 @@
  */
 
 #include <assert.h>
+#include <pdu/pdubuf.h>
 #include <string.h>
 #include "bt-proto.h"
-#include "bt-pdubuf.h"
 #include "core.h"
 #include "core-io.h"
 #include "compiler.h"
@@ -57,7 +58,7 @@ register_module(const struct pdu* cmd)
 
   return BT_STATUS_SUCCESS;
 err_core_register_module:
-  cleanup_pdu_wbuf(wbuf);
+  destroy_pdu_wbuf(wbuf);
   return BT_STATUS_FAIL;
 }
 
@@ -82,7 +83,7 @@ unregister_module(const struct pdu* cmd)
 
   return BT_STATUS_SUCCESS;
 err_core_unregister_module:
-  cleanup_pdu_wbuf(wbuf);
+  destroy_pdu_wbuf(wbuf);
   return BT_STATUS_FAIL;
 }
 
@@ -106,7 +107,7 @@ configure(const struct pdu* cmd)
 
   return BT_STATUS_SUCCESS;
 err_core_configure:
-  cleanup_pdu_wbuf(wbuf);
+  destroy_pdu_wbuf(wbuf);
   return BT_STATUS_FAIL;
 }
 
