@@ -526,7 +526,7 @@ cleanup:
 #ifdef Q_BLUETOOTH
 static void
 pin_request_cb(bt_bdaddr_t* remote_bd_addr, bt_bdname_t* bd_name,
-               uint32_t cod, uint8_t secure)
+               uint32_t cod, uint8_t secure __attribute__((unused)))
 #else
 static void
 pin_request_cb(bt_bdaddr_t* remote_bd_addr, bt_bdname_t* bd_name,
